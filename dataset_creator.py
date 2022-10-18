@@ -45,7 +45,7 @@ def get_samples_from_class(class_name, num_samples_for_class):
 
 def get_samples(percents, name_bin):
 
-    print("Assigning samples to {} bin dataset".format(name_bin))
+    print("Assigning samples to {} bin dataset:".format(name_bin))
 
     num_black_samples = math.floor(percents[0]*total_black_samples)
     num_blue_samples = math.floor(percents[1]*total_blue_samples)
@@ -112,7 +112,7 @@ if __name__ == '__main__':
 
             samples_for_a_class_for_a_bin = dict_of_samples[bin_colour][_class]
 
-            print("    {} {} samples in the {} bin".format(
+            print("    Copying {} {} samples to the {} bin...".format(
                 len(samples_for_a_class_for_a_bin), _class, bin_colour))
 
             for sample in samples_for_a_class_for_a_bin:
