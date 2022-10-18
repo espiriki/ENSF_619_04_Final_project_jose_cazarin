@@ -1,5 +1,15 @@
 import argparse
 
+# Note that the values in the first element of each bin array sum to 1.0
+# I did this to use all the samples for a given class
+# In this way the samples for the class "black" will be distributed like this:
+# black bin will receive 75% of the samples of "black" class
+# blue bin will receive 15% of the samples of "black" class
+# green bin will receive 10% of the samples of "black" class
+# Totalling 100% of the samples of the "black" class
+#
+# Same applies to the samples of the classes blue and green for the other bins
+
 # black class, blue class, green class
 black_bin_array = [0.75, 0.20, 0.07]
 
