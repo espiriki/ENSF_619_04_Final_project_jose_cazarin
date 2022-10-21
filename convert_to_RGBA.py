@@ -15,7 +15,6 @@ Path(os.path.join(rgba_path, "green")).mkdir(parents=True, exist_ok=True)
 for path, _, images in os.walk(original_path):
 
     print("Num images in folder {}: {}".format(path, len(images)))
-    print("\n")
 
     for image in images:
         full_path = os.path.join(path, image)

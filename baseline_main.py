@@ -10,7 +10,6 @@ from torchsummary import summary
 from models import EffNetB7
 from update import test_inference
 from options import args_parser
-from utils import get_dataset
 from torch.utils.data import DataLoader
 import torch
 import matplotlib.pyplot as plt
