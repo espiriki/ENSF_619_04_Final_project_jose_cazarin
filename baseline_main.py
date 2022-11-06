@@ -33,11 +33,10 @@ TRANSFORM_IMG = transforms.Compose([
     keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
     transforms.Resize((WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
     transforms.RandomHorizontalFlip(),
-    transforms.RandomAutocontrast(),
-    transforms.RandomAdjustSharpness(sharpness_factor=2),
     transforms.RandomVerticalFlip(),
-    transforms.RandomHorizontalFlip(),
+    transforms.RandomAutocontrast(),
     transforms.RandomPerspective(),
+    transforms.RandomAdjustSharpness(sharpness_factor=2),
     transforms.ToTensor(),
     transforms.Normalize([0.5599, 0.5358, 0.5033], [0.3814, 0.3761, 0.3833]),
 ])

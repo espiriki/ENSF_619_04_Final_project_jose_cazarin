@@ -1,12 +1,8 @@
 import torchvision
-from PIL import Image
-from pathlib import Path
-import matplotlib.pyplot as plt
-import numpy as np
 from torchvision import transforms
 import torch
-import torchvision.transforms as T
 import keep_aspect_ratio
+
 TRAIN_DATA_PATH = "./original_dataset_rgba"
 
 WIDTH = 384
@@ -18,11 +14,10 @@ TRANSFORM_IMG = transforms.Compose([
     keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
     transforms.Resize((WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
     transforms.RandomHorizontalFlip(),
-    transforms.RandomAutocontrast(),
-    transforms.RandomAdjustSharpness(sharpness_factor=2),
     transforms.RandomVerticalFlip(),
-    transforms.RandomHorizontalFlip(),
+    transforms.RandomAutocontrast(),
     transforms.RandomPerspective(),
+    transforms.RandomAdjustSharpness(sharpness_factor=2),
     transforms.ToTensor(),
 ])
 
@@ -38,7 +33,7 @@ count = 0
 for batch_idx, (images, labels) in enumerate(data_loader_train):
 
     for img in images:
-        transform = T.ToPILImage()
+        transform = torchvision.transforms.ToPILImage()
         img = transform(img)
         img.save("augmented_data/" + str(count) + ".png", quality=100)
         count = count + 1
