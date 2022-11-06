@@ -39,7 +39,7 @@ TRANSFORM_IMG = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.RandomPerspective(),
     transforms.ToTensor(),
-    transforms.Normalize([0.6975, 0.6666, 0.6239], [0.2863, 0.2918, 0.3213]),
+    transforms.Normalize([0.5599, 0.5358, 0.5033], [0.3814, 0.3761, 0.3833]),
 ])
 
 
