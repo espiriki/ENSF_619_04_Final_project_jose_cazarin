@@ -43,51 +43,6 @@ TRANSFORM_IMG = transforms.Compose([
 ])
 
 
-def imshow(img):
-    img = img / 2 + 0.5     # unnormalize
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
-
-
-def mean_std(loader):
-
-    images, _ = next(iter(loader))
-
-    print("num images 1: {}".format(len(images)))
-
-    mean = torch.mean(images, dim=[0, 2, 3])
-    std = torch.std(images, dim=[0, 2, 3])
-
-    return mean, std
-
-
-def get_mean_and_std(dataloader):
-
-    channels_sum, channels_squared_sum, num_batches = 0, 0, 0
-
-    for data, _ in dataloader:
-
-        channels_sum += torch.mean(data, dim=[0, 2, 3])
-        channels_squared_sum += torch.mean(data**2, dim=[0, 2, 3])
-        num_batches += 1
-        print(num_batches)
-        # if num_batches == 2:
-        #     break
-
-    print("num batches 2: {}".format(num_batches))
-    mean = channels_sum / num_batches
-
-    # std = sqrt(E[X^2] - (E[X])^2)
-    std = torch.sqrt((channels_squared_sum / num_batches) - mean ** 2)
-
-    return mean, std
-
-
-# def print_summary(model):
-
-#     summary(model, (3, WIDTH, HEIGHT))
-
 def free_gpu_cache():
     print("Initial GPU Usage")
     gpu_usage()
@@ -142,8 +97,6 @@ if __name__ == '__main__':
         global_model.load_state_dict(torch.load(model_weights))
     else:
         print("Starting from scratch")
-
-    # print_summary(global_model)
 
     train_data = torchvision.datasets.ImageFolder(
         root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
