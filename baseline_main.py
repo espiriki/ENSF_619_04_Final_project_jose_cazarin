@@ -20,14 +20,17 @@ from numba import cuda
 import os
 import math
 import csv
+import keep_aspect_ratio
 
 TRAIN_DATA_PATH = "./original_dataset_rgba"
 
 WIDTH = 384
 HEIGHT = 380
+AR_INPUT = WIDTH / HEIGHT
 
 TRANSFORM_IMG = transforms.Compose([
     transforms.RandomRotation(degrees=(-90, 90), expand=True),
+    keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
     transforms.Resize((WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
     transforms.RandomHorizontalFlip(),
     transforms.RandomAutocontrast(),
