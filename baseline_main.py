@@ -69,10 +69,12 @@ if __name__ == '__main__':
         global_model = EffNetB0()
         input_size = eff_net_sizes[args.model]
         batch_size = 32
+        args.lr = 0.01
     elif args.model == "res18":
         global_model = ResNet18()
         input_size = (300, 300)
         batch_size = 32
+        args.lr = 0.01
     elif args.model == "res50":
         global_model = ResNet50()
         input_size = (400, 400)
@@ -89,10 +91,12 @@ if __name__ == '__main__':
         global_model = MBNetLarge()
         input_size = (320, 320)
         batch_size = 32
+        args.lr = 0.01
     elif args.model == "vision":
         global_model = VisionLarge32()
         input_size = (224, 224)
         batch_size = 24
+        args.lr = 0.008
 
     print("Batch Size: {}".format(batch_size))
     print("Training for {} epochs".format(args.epochs))
