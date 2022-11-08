@@ -125,6 +125,8 @@ if __name__ == '__main__':
     train_data = torchvision.datasets.ImageFolder(
         root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
 
+    print("Num of training images: {}".format(len(train_data)))
+
     # Set the model to train and send it to device.
     global_model.to(device)
 
