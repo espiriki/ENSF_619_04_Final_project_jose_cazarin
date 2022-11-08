@@ -6,15 +6,12 @@ import numpy as np
 from cmath import sqrt
 from torchvision import transforms
 import torchvision
-import sys
-# from torchsummary import summary
 from models import *
 from update import test_inference
 from options import args_parser
 from torch.utils.data import DataLoader
 import torch
 import matplotlib.pyplot as plt
-import gc
 from GPUtil import showUtilization as gpu_usage
 from numba import cuda
 import os
@@ -22,24 +19,13 @@ import math
 import csv
 import keep_aspect_ratio
 
+eff_net_sizes = {
+    'b0': (256, 224),
+    'b4': (384, 380),
+    'b7': (633, 600),
+}
+
 TRAIN_DATA_PATH = "./original_dataset_rgba"
-
-WIDTH = 384
-HEIGHT = 380
-AR_INPUT = WIDTH / HEIGHT
-
-TRANSFORM_IMG = transforms.Compose([
-    transforms.RandomRotation(degrees=(-90, 90), expand=True),
-    keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
-    transforms.Resize((WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomVerticalFlip(),
-    transforms.RandomAutocontrast(),
-    transforms.RandomPerspective(),
-    transforms.RandomAdjustSharpness(sharpness_factor=2),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5599, 0.5358, 0.5033], [0.3814, 0.3761, 0.3833]),
-])
 
 
 def free_gpu_cache():
@@ -56,25 +42,6 @@ def free_gpu_cache():
     gpu_usage()
 
 
-def calculate_val_acc(global_model, data_loader_val, len_val_set, device):
-
-    global_model.eval()
-    correct = 0
-
-    with torch.no_grad():
-
-        for _, (images, labels) in enumerate(data_loader_val):
-
-            images, labels = images.to(device), labels.to(device)
-            outputs = global_model(images)
-
-            _, pred_labels = torch.max(outputs, 1)
-            pred_labels = pred_labels.view(-1)
-            correct += torch.sum(torch.eq(pred_labels, labels)).item()
-
-    return 100 * (correct/len_val_set)
-
-
 if __name__ == '__main__':
     args = args_parser()
 
@@ -86,68 +53,100 @@ if __name__ == '__main__':
         print("GPU OK!!!")
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(device)
 
+    print("Model: {}".format(args.model))
+
+    # Those max batch sizes were based on 8GB of GPU memory
+    # which is what I have in my local PC
     global_model = EffNetB4()
-    model_weights = "model_save/epoch_25_batch_800.model"
+    input_size = eff_net_sizes["b4"]
+    batch_size = 10
+    if args.model == "b4":
+        global_model = EffNetB4()
+        input_size = eff_net_sizes[args.model]
+        batch_size = 8
+    elif args.model == "b0":
+        global_model = EffNetB0()
+        input_size = eff_net_sizes[args.model]
+        batch_size = 32
+    elif args.model == "res18":
+        global_model = ResNet18()
+        input_size = (300, 300)
+        batch_size = 32
+    elif args.model == "res50":
+        global_model = ResNet50()
+        input_size = (400, 400)
+        batch_size = 16
+    elif args.model == "res152":
+        global_model = ResNet152()
+        input_size = (500, 500)
+        batch_size = 6
+    elif args.model == "next_tiny":
+        global_model = ConvNextTiny()
+        input_size = (224, 224)
+        batch_size = 32
+    elif args.model == "mb":
+        global_model = MBNetLarge()
+        input_size = (320, 320)
+        batch_size = 32
+    elif args.model == "vision":
+        global_model = VisionLarge32()
+        input_size = (224, 224)
+        batch_size = 24
 
-    if os.path.exists(model_weights):
-        print("Loading weights {}".format(model_weights))
-        global_model.load_state_dict(torch.load(model_weights))
-    else:
-        print("Starting from scratch")
+    print("Batch Size: {}".format(batch_size))
+
+    WIDTH = input_size[0]
+    HEIGHT = input_size[1]
+    AR_INPUT = WIDTH / HEIGHT
+
+    TRANSFORM_IMG = transforms.Compose([
+        transforms.RandomRotation(degrees=(-90, 90), expand=True),
+        keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
+        transforms.Resize(
+            (WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        transforms.RandomAutocontrast(),
+        transforms.RandomPerspective(),
+        transforms.RandomAdjustSharpness(sharpness_factor=2),
+        transforms.ToTensor(),
+        # Those per-channel mean and std values were obtained using the
+        # calculate_mean_std_dataset.py script
+        transforms.Normalize([0.5599, 0.5358, 0.5033],
+                             [0.3814, 0.3761, 0.3833]),
+    ])
 
     train_data = torchvision.datasets.ImageFolder(
         root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
 
-    n = len(train_data)  # total number of examples
-    n_train = int(0.7 * n)  # take ~70% for test
-    n_val = int(0.2 * n)  # take ~20% for test
-    n_test = int(0.10 * n)  # take ~10% for test
-    train_set = torch.utils.data.Subset(
-        train_data, range(n_train))  # take first 70%
-    val_set = torch.utils.data.Subset(
-        train_data, range(n_train, n_train + n_val))  # take the rest
-    test_set = torch.utils.data.Subset(
-        train_data, range(n_train + n_val, n))  # take the rest
-
-    print(train_data.classes)
-    print(train_data.class_to_idx)
-
-    print(len(train_set))
-    print(len(val_set))
-    print(len(test_set))
-
     # Set the model to train and send it to device.
     global_model.to(device)
-    # print(global_model)
 
     print("Learning Rate: {}".format(args.lr))
     optimizer = torch.optim.Adam(global_model.parameters(), lr=args.lr,
                                  weight_decay=1e-4)
 
-    _batch_size = 10
+    # If the batch size is too small, this means we are running out of GPU mem
+    # so limit the number of workers as well, which increases GPU mem usage
+    _num_workers = 8
+    if batch_size < 16:
+        _num_workers = 4
 
-    data_loader_train = torch.utils.data.DataLoader(dataset=train_set,
-                                                    batch_size=_batch_size,
-                                                    shuffle=True, num_workers=int(_batch_size/2))
-
-    data_loader_val = torch.utils.data.DataLoader(dataset=val_set,
-                                                  batch_size=int(
-                                                      _batch_size),
-                                                  shuffle=True, num_workers=int(_batch_size/2))
+    data_loader_train = torch.utils.data.DataLoader(dataset=train_data,
+                                                    batch_size=batch_size,
+                                                    shuffle=True, num_workers=_num_workers)
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
     epoch_loss = []
-    train_accuracy_history = []
-    val_accuracy_history = []
+    epoch_train_accuracy = []
 
     print("Starting training...")
     for epoch in range(args.epochs):
         batch_loss = []
 
         correct = 0
-        num_batches = math.ceil((len(train_set)/_batch_size))
+        num_batches = math.ceil((len(train_data)/batch_size))
 
         global_model.train()
 
@@ -157,16 +156,12 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
 
-            # print("Calculating inferences...")
             outputs = global_model(images)
 
-            # print("Calculating loss...")
             loss = criterion(outputs, labels)
 
-            # print("Backpropagation...")
             loss.backward()
 
-            # print("Updating optimizer")
             optimizer.step()
 
             _, pred_labels = torch.max(outputs, 1)
@@ -178,32 +173,20 @@ if __name__ == '__main__':
 
             batch_loss.append(loss.detach())
 
-            if batch_idx % 50 == 0 and batch_idx != 0:
-                print("Loss: {}".format(loss.item()))
-                weights_path = "./model_save/epoch_" + \
-                    str(epoch+1)+"_batch_"+str(batch_idx)+".model"
+        weights_path = "./model_save/epoch_" + \
+            str(epoch+1)+".model"
 
-                print("saving weights to {}".format(weights_path))
+        print("Saving weights to {}".format(weights_path))
 
-                torch.save(global_model.state_dict(), weights_path)
+        torch.save(global_model.state_dict(), weights_path)
 
-        train_accuracy = 100 * correct / len(train_set)
+        train_accuracy = 100 * correct / len(train_data)
         print("Train set acc on epoch {}: {:.3f}".format(epoch, train_accuracy))
-        train_accuracy_history.append(train_accuracy)
-
-        val_accuracy = calculate_val_acc(
-            global_model, data_loader_val, len(val_set), device)
-
-        print("Val set acc on epoch {}: {:.3f}".format(epoch, val_accuracy))
-        val_accuracy_history.append(val_accuracy)
+        epoch_train_accuracy.append(train_accuracy)
 
         loss_avg = sum(batch_loss)/len(batch_loss)
         epoch_loss.append(loss_avg)
-
-    with open('save/val_acc.csv', 'w') as f:
-
-        write = csv.writer(f)
-        write.writerow(map(lambda x: [x], val_accuracy_history))
+        print("Loss on epoch {}: {:.3f}".format(epoch, loss_avg))
 
     with open('save/train_loss.csv', 'w') as f:
 
@@ -213,26 +196,20 @@ if __name__ == '__main__':
     with open('save/train_acc.csv', 'w') as f:
 
         write = csv.writer(f)
-        write.writerow(map(lambda x: [x], train_accuracy_history))
+        write.writerow(map(lambda x: [x], epoch_train_accuracy))
 
     # Plot loss
-
     epoch_loss = torch.FloatTensor(epoch_loss).cpu()
     plt.figure()
     plt.plot(range(len(epoch_loss)), epoch_loss)
     plt.xlabel('Epochs')
     plt.ylabel('Train loss')
-    plt.savefig('save/baseline_{}_{}_{}_loss.png'.format(args.dataset, args.model,
-                                                         args.epochs))
+    plt.savefig(
+        'save/baseline_[M]_{}_[E]_{}_[LR]_{}_loss.png'.format(args.model, args.epochs, args.lr))
 
     plt.figure()
-    plt.plot(range(len(train_accuracy_history)), train_accuracy_history)
+    plt.plot(range(len(epoch_train_accuracy)), epoch_train_accuracy)
     plt.xlabel('Epochs')
     plt.ylabel('Train accuracy per Epoch')
-    plt.savefig('save/train_baseline_accuracy_per_epoch.png'.format())
-
-    plt.figure()
-    plt.plot(range(len(val_accuracy_history)), val_accuracy_history)
-    plt.xlabel('Epochs')
-    plt.ylabel('Val accuracy per Epoch')
-    plt.savefig('save/val_baseline_accuracy_per_epoch.png'.format())
+    plt.savefig(
+        'save/baseline_[M]_{}_[E]_{}_[LR]_{}_accuracy_per_epoch.png'.format(args.model, args.epochs, args.lr))
