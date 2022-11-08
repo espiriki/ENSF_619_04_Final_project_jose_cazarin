@@ -189,12 +189,12 @@ if __name__ == '__main__':
         epoch_loss.append(loss_avg)
         print("Loss on epoch {}: {:.3f}".format(epoch, loss_avg))
 
-    with open('save/train_loss.csv', 'w') as f:
+    with open('save/train_loss_{}.csv'.format(args.model), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: [x], epoch_loss))
 
-    with open('save/train_acc.csv', 'w') as f:
+    with open('save/train_acc_{}.csv'.format(args.model), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: [x], epoch_train_accuracy))
