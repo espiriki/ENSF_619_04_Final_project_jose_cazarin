@@ -95,6 +95,7 @@ if __name__ == '__main__':
         batch_size = 24
 
     print("Batch Size: {}".format(batch_size))
+    print("Training for {} epochs".format(args.epochs))
 
     WIDTH = input_size[0]
     HEIGHT = input_size[1]
@@ -173,8 +174,8 @@ if __name__ == '__main__':
 
             batch_loss.append(loss.detach())
 
-        weights_path = "./model_save/epoch_" + \
-            str(epoch+1)+".model"
+        weights_path = "./model_weights/model_{}_epoch_{}.model".format(
+            args.model, epoch+1)
 
         print("Saving weights to {}".format(weights_path))
 
