@@ -2,190 +2,209 @@
 # -*- coding: utf-8 -*-
 # Python version: 3.6
 
-
-import os
-import copy
-import time
-import pickle
 import numpy as np
-from tqdm import tqdm
-
-import torch
-from tensorboardX import SummaryWriter
-from torch.utils.data import DataLoader
+from cmath import sqrt
+from torchvision import transforms
+import torchvision
+from models import *
+from update import calculate_acc_global_dataset
 from options import args_parser
-from update import LocalUpdate, test_inference
-from models import MLP, CNNMnist
-from utils import get_dataset, average_weights, exp_details
-from torchsummary import summary
+import torch
+import matplotlib.pyplot as plt
+from GPUtil import showUtilization as gpu_usage
+from numba import cuda
+import csv
+import copy
+import base_bin
+from utils import average_weights
 
-def print_summary(model):
+TRAIN_DATA_PATH = "./original_dataset_rgba"
 
-    trainloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+eff_net_sizes = {
+    'b0': (256, 224),
+    'b4': (384, 380),
+    'b7': (633, 600),
+}
 
-    for _, (image, _) in enumerate(trainloader):
-        summary(model, image)
-        break
+
+def free_gpu_cache():
+    print("Initial GPU Usage")
+    gpu_usage()
+
+    torch.cuda.empty_cache()
+
+    cuda.select_device(0)
+    cuda.close()
+    cuda.select_device(0)
+
+    print("GPU Usage after emptying the cache")
+    gpu_usage()
 
 
 if __name__ == '__main__':
-    start_time = time.time()
-
-    # define paths
-    path_project = os.path.abspath('..')
-    logger = SummaryWriter('../logs')
-
     args = args_parser()
-    exp_details(args)
 
-    if args.gpu and torch.cuda.is_available():
-        torch.cuda.set_device(args.gpu)
-    device = 'cuda' if args.gpu else 'cpu'
+    if not torch.cuda.is_available():
+        print("GPU not available!!!!")
+    else:
+        torch.cuda.empty_cache()
+        free_gpu_cache()
+        print("GPU OK!!!")
 
-    # load dataset and user groups
-    train_dataset, test_dataset, user_groups = get_dataset(args)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # BUILD MODEL
-    if args.model == 'cnn':
-        # Convolutional neural netork
-        if args.dataset == 'mnist':
-            global_model = CNNMnist(args=args)
+    print("Model: {}".format(args.model))
 
-            print_summary(global_model)
+    # Those max batch sizes were based on 8GB of GPU memory
+    # which is what I have in my local PC
+    global_model = EffNetB4()
+    input_size = eff_net_sizes["b4"]
+    batch_size = 10
+    if args.model == "b4":
+        global_model = EffNetB4()
+        input_size = eff_net_sizes[args.model]
+        batch_size = 8
+    elif args.model == "b0":
+        global_model = EffNetB0()
+        input_size = eff_net_sizes[args.model]
+        batch_size = 32
+        args.lr = 0.01
+    elif args.model == "res18":
+        global_model = ResNet18()
+        input_size = (300, 300)
+        batch_size = 32
+        args.lr = 0.01
+    elif args.model == "res50":
+        global_model = ResNet50()
+        input_size = (400, 400)
+        batch_size = 16
+    elif args.model == "res152":
+        global_model = ResNet152()
+        input_size = (500, 500)
+        batch_size = 6
+    elif args.model == "next_tiny":
+        global_model = ConvNextTiny()
+        input_size = (224, 224)
+        batch_size = 32
+    elif args.model == "mb":
+        global_model = MBNetLarge()
+        input_size = (320, 320)
+        batch_size = 32
+        args.lr = 0.01
+    elif args.model == "vision":
+        global_model = VisionLarge32()
+        input_size = (224, 224)
+        batch_size = 24
+        args.lr = 0.008
 
-            pytorch_total_params = sum(p.numel() for p in global_model.parameters())
+    print("Batch Size: {}".format(batch_size))
+    print("Training for {} Global Epochs".format(args.epochs))
 
-            print("Total Parameters CNN: {}".format(pytorch_total_params))
+    WIDTH = input_size[0]
+    HEIGHT = input_size[1]
+    AR_INPUT = WIDTH / HEIGHT
 
-            # According to the paper, the number of parameters in the CNN model is 1663370
-            assert pytorch_total_params == 1663370
+    TRANSFORM_IMG = transforms.Compose([
+        transforms.Resize(
+            (WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
+        transforms.ToTensor(),
+    ])
 
-    elif args.model == 'mlp':
-        # Multi-layer preceptron
-        img_size = train_dataset[0][0].shape
-        len_in = 1
-        for x in img_size:
-            len_in *= x
+    global_dataset = torchvision.datasets.ImageFolder(
+        root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
 
-        # According to the paper, the number of neurons in the hidden
-        # layer is 200
-        global_model = MLP(dim_in=len_in, dim_hidden=200,
-                            dim_out=args.num_classes)
+    n = len(global_dataset)  # total number of examples
+    n_train = int(0.5 * n)  # take ~50% for test
 
-        print_summary(global_model)
+    # global_dataset = torch.utils.data.Subset(
+    #     global_dataset, range(n_train))
 
-        pytorch_total_params = sum(p.numel() for p in global_model.parameters())
+    # If the batch size is too small, this means we are running out of GPU mem
+    # so limit the number of workers as well, which increases GPU mem usage
+    _num_workers = 8
+    if batch_size < 16:
+        _num_workers = 4
 
-        print("Total Parameters 2NN: {}".format(pytorch_total_params))
+    black_bin = base_bin.BaseBin(args, "./non_iid_dataset_rgba/black_bin",
+                                 WIDTH, HEIGHT, batch_size, _num_workers, "Black bin")
 
-        # According to the paper, the number of parameters in the 2NN model is 199210
-        assert pytorch_total_params == 199210
+    green_bin = base_bin.BaseBin(args, "./non_iid_dataset_rgba/green_bin",
+                                 WIDTH, HEIGHT, batch_size, _num_workers, "Green bin")
 
-    # Set the model to train and send it to device.
-    global_model.to(device)
-    global_model.train()
-    print(global_model)
+    blue_bin = base_bin.BaseBin(args, "./non_iid_dataset_rgba/blue_bin",
+                                WIDTH, HEIGHT, batch_size, _num_workers, "Blue bin")
 
-    # copy weights
-    global_weights = global_model.state_dict()
+    print("Starting training...")
 
-    # Training
-    train_loss, train_accuracy, test_accuracy = [], [], []
-    val_acc_list, net_list = [], []
-    cv_loss, cv_acc = [], []
-    val_loss_pre, counter = 0, 0
+    bins = {"black": black_bin, "blue": blue_bin, "green": green_bin}
 
-    print(args)
-
-    epoch_count = 0
+    train_loss = []
+    epoch_loss = []
+    epoch_train_accuracy = []
     for epoch in range(args.epochs):
+        batch_loss = []
 
-        # if epoch_count%38==0 and epoch_count > 0:
-        #     args.lr = args.lr * 1.0/(pow(10.0,1.0/6.0))
-
-        # init local weights and loss
         local_weights, local_losses = [], []
-        print(f'\n | Global Training Round : {epoch+1} |\n')
+        print("Global Training Epoch : {}".format(epoch))
 
-        global_model.train()
-        # sample a fraction of users (with args frac)
-        m = max(int(args.frac * args.num_users), 1)
-        idxs_users = np.random.choice(range(args.num_users), m, replace=False)
-
-        print("Sampling {} devices with ids:".format(m))
-        print(idxs_users)
-
-        # for each sampled device, run local training
-        print("Local training started with LR: {}".format(args.lr))
-        for idx in idxs_users:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-            w, loss = local_model.update_weights(
-                model=copy.deepcopy(global_model), global_round=epoch)
-            local_weights.append(copy.deepcopy(w))
+        for bin in bins:
+            local_model = bins[bin]
+            w_local_update, loss = local_model.local_update_weights(
+                model=copy.deepcopy(global_model))
+            local_weights.append(copy.deepcopy(w_local_update))
             local_losses.append(copy.deepcopy(loss))
-
 
         print("Local training finished!\n")
         # update global weights
+
+        print("Averaging weights of {} different models".format(len(local_weights)))
         global_weights = average_weights(local_weights)
         global_model.load_state_dict(global_weights)
 
         # calculate global loss
-        loss_avg = sum(local_losses) / len(local_losses)
-        train_loss.append(loss_avg)
+        loss_avg_global = sum(local_losses) / len(local_losses)
+        train_loss.append(loss_avg_global)
 
-        print("Evaluating global model...")
-        # calculate test set accuracy
-        test_acc, _ = test_inference(args, global_model, test_dataset)
-        test_accuracy.append(test_acc)
+        global_weights_path = "./fed_global_model_weights/model_{}_epoch_{}.model".format(
+            args.model, epoch+1)
 
-        print(f'Avg Training Stats after {epoch+1} global rounds:')
-        print(f'Training Loss : {np.mean(np.array(train_loss))}')
-        print('Test Set Accuracy: {:.2f}% \n'.format(100*test_acc))
+        print("Saving global weights to {}".format(global_weights_path))
 
-        epoch_count = epoch_count + 1
+        torch.save(global_model.state_dict(), global_weights_path)
 
-        if args.model == 'mlp' and test_acc > 0.92:
-            break
+        print("Calculating Global accuracy...")
+        train_accuracy = calculate_acc_global_dataset(
+            global_model, global_dataset, 4, device)
+        print("Global acc on global epoch {}: {:.3f}".format(
+            epoch, train_accuracy))
+        epoch_train_accuracy.append(train_accuracy)
 
-        if args.model == 'cnn' and test_acc > 0.94:
-            break
+        epoch_loss.append(loss_avg_global)
+        print("Global loss on global epoch {}: {:.3f}".format(
+            epoch, loss_avg_global))
 
-    print(f' \n Results after {epoch_count} global rounds of training:')
-    print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
+    with open('fed_save/train_loss_{}.csv'.format(args.model), 'w') as f:
 
-    # Saving the objects train_loss and test_accuracy:
-    file_name = 'save/objects/{}_{}_epochs[{}]_frac_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
-        format(args.dataset, args.model, epoch_count, args.frac, args.iid,
-               args.local_ep, args.local_bs)
+        write = csv.writer(f)
+        write.writerow(map(lambda x: x, epoch_loss))
 
-    with open(file_name, 'wb') as f:
-        pickle.dump([train_loss, test_accuracy], f)
+    with open('fed_save/train_acc_{}.csv'.format(args.model), 'w') as f:
 
-    print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
+        write = csv.writer(f)
+        write.writerow(map(lambda x: x, epoch_train_accuracy))
 
-    # PLOTTING (optional)
-    import matplotlib
-    import matplotlib.pyplot as plt
-    matplotlib.use('Agg')
-
-    # Plot Loss curve
+    # Plot loss
+    epoch_loss = torch.FloatTensor(epoch_loss).cpu()
     plt.figure()
-    plt.title('Training Loss vs Communication rounds')
-    plt.plot(range(len(train_loss)), train_loss, color='r')
-    plt.ylabel('Training loss')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('save/fed_{}_{}_epochs[{}]_frac_C[{}]_iid[{}]_E[{}]_B[{}]_LR[{}]_loss.png'.
-                format(args.dataset, args.model, epoch_count, args.frac,
-                       args.iid, args.local_ep, args.local_bs, args.lr))
-    
-    # Plot Average Accuracy vs Communication rounds
+    plt.plot(range(len(epoch_loss)), epoch_loss)
+    plt.xlabel('Epochs')
+    plt.ylabel('Train loss')
+    plt.savefig(
+        'fed_save/baseline_[M]_{}_[E]_{}_[LR]_{}_loss.png'.format(args.model, args.epochs, args.lr))
+
     plt.figure()
-    plt.title('Test Accuracy vs Communication rounds')
-    plt.plot(range(len(test_accuracy)), test_accuracy, color='k')
-    plt.ylabel('Test Accuracy')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('save/fed_{}_{}_epochs[{}]_frac_C[{}]_iid[{}]_E[{}]_B[{}]_LR[{}]_acc.png'.
-                format(args.dataset, args.model, epoch_count, args.frac,
-                       args.iid, args.local_ep, args.local_bs, args.lr))
+    plt.plot(range(len(epoch_train_accuracy)), epoch_train_accuracy)
+    plt.xlabel('Epochs')
+    plt.ylabel('Train accuracy per Epoch')
+    plt.savefig(
+        'fed_save/baseline_[M]_{}_[E]_{}_[LR]_{}_accuracy_per_epoch.png'.format(args.model, args.epochs, args.lr))

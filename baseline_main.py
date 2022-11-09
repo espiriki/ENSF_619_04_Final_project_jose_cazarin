@@ -7,7 +7,7 @@ from cmath import sqrt
 from torchvision import transforms
 import torchvision
 from models import *
-from update import test_inference
+from update import calculate_acc_global_dataset
 from options import args_parser
 from torch.utils.data import DataLoader
 import torch
@@ -127,7 +127,7 @@ if __name__ == '__main__':
 
     print("Num of training images: {}".format(len(train_data)))
 
-    # Set the model to train and send it to device.
+    # Send the model to GPU
     global_model.to(device)
 
     print("Learning Rate: {}".format(args.lr))
@@ -155,6 +155,7 @@ if __name__ == '__main__':
         correct = 0
         num_batches = math.ceil((len(train_data)/batch_size))
 
+        # Set the model to train
         global_model.train()
 
         for batch_idx, (images, labels) in enumerate(data_loader_train):
@@ -163,15 +164,15 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
 
-            outputs = global_model(images)
+            model_outputs = global_model(images)
 
-            loss = criterion(outputs, labels)
+            loss = criterion(model_outputs, labels)
 
             loss.backward()
 
             optimizer.step()
 
-            _, pred_labels = torch.max(outputs, 1)
+            _, pred_labels = torch.max(model_outputs, 1)
             pred_labels = pred_labels.view(-1)
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
 
