@@ -17,9 +17,8 @@ import csv
 import copy
 import base_bin
 from utils import average_weights
-import keep_aspect_ratio
 
-TRAIN_DATA_PATH = "./original_dataset_rgba"
+TEST_DATA_PATH = "./original_dataset_rgba"
 
 eff_net_sizes = {
     'b0': (256, 224),
@@ -113,8 +112,8 @@ if __name__ == '__main__':
         transforms.ToTensor()
     ])
 
-    global_dataset = torchvision.datasets.ImageFolder(
-        root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
+    global_test_dataset = torchvision.datasets.ImageFolder(
+        root=TEST_DATA_PATH, transform=TRANSFORM_IMG)
 
     # If the batch size is too small, this means the model is too big, which limits
     # the batch size that can be used. To mitigate this problem, the number of workers
@@ -172,7 +171,7 @@ if __name__ == '__main__':
 
         print("Calculating Global accuracy...")
         train_accuracy = calculate_acc_global_dataset(
-            global_model, global_dataset, 4, device)
+            global_model, global_test_dataset, 4, device)
         print("Global acc on global epoch {}: {:.3f}".format(
             epoch, train_accuracy))
         epoch_train_accuracy.append(train_accuracy)

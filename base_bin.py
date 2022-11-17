@@ -33,16 +33,18 @@ class BaseBin():
             transforms.RandomAdjustSharpness(sharpness_factor=2),
             transforms.ToTensor()]
 
-        black_bin_tranforms = base_augmentations
-        green_bin_tranforms = base_augmentations
-        blue_bin_tranforms = base_augmentations
+        black_bin_tranforms = base_augmentations.copy()
+        green_bin_tranforms = base_augmentations.copy()
+        blue_bin_tranforms = base_augmentations.copy()
 
         # Those per-channel mean and std values were obtained using the
         # calculate_mean_std_dataset.py script
         black_bin_tranforms.append(transforms.Normalize([0.5149, 0.4969, 0.4590],
                                                         [0.3608, 0.3542, 0.3597]))
+
         blue_bin_tranforms.append(transforms.Normalize([0.5886, 0.5712, 0.5501],
                                                        [0.3881, 0.3829, 0.3896]))
+
         green_bin_tranforms.append(transforms.Normalize([0.5768, 0.5347, 0.4923],
                                                         [0.3913, 0.3880, 0.3957]))
 
@@ -53,8 +55,6 @@ class BaseBin():
             transforms_to_be_used = green_bin_tranforms
         elif name == "Blue bin":
             transforms_to_be_used = blue_bin_tranforms
-
-        print(transforms_to_be_used)
 
         self.train_data = torchvision.datasets.ImageFolder(
             root=path_to_dataset, transform=(transforms.Compose(transforms_to_be_used)))
