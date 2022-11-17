@@ -3,7 +3,11 @@ import torchvision
 from torchvision import transforms
 import keep_aspect_ratio
 
-TRAIN_DATA_PATH = "./original_dataset_rgba"
+# TRAIN_DATA_PATH = "./original_dataset_rgba"
+# TRAIN_DATA_PATH = "./non_iid_dataset_rgba/black_bin"
+# TRAIN_DATA_PATH = "./non_iid_dataset_rgba/blue_bin"
+TRAIN_DATA_PATH = "./non_iid_dataset_rgba/green_bin"
+
 WIDTH = 384
 HEIGHT = 380
 AR_INPUT = WIDTH / HEIGHT
