@@ -17,6 +17,7 @@ import csv
 import copy
 import base_bin
 from utils import average_weights
+import keep_aspect_ratio
 
 TRAIN_DATA_PATH = "./original_dataset_rgba"
 
@@ -106,19 +107,24 @@ if __name__ == '__main__':
     AR_INPUT = WIDTH / HEIGHT
 
     TRANSFORM_IMG = transforms.Compose([
+        transforms.RandomRotation(degrees=(-90, 90), expand=True),
+        keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
         transforms.Resize(
             (WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        transforms.RandomAutocontrast(),
+        transforms.RandomPerspective(),
+        transforms.RandomAdjustSharpness(sharpness_factor=2),
         transforms.ToTensor(),
+        # Those per-channel mean and std values were obtained using the
+        # calculate_mean_std_dataset.py script
+        transforms.Normalize([0.5599, 0.5358, 0.5033],
+                             [0.3814, 0.3761, 0.3833]),
     ])
 
     global_dataset = torchvision.datasets.ImageFolder(
         root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
-
-    n = len(global_dataset)  # total number of examples
-    n_train = int(0.5 * n)  # take ~50% for test
-
-    # global_dataset = torch.utils.data.Subset(
-    #     global_dataset, range(n_train))
 
     # If the batch size is too small, this means the model is too big, which limits
     # the batch size that can be used. To mitigate this problem, the number of workers
