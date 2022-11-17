@@ -8,7 +8,7 @@ import gc
 
 class BaseBin():
 
-    def __init__(self, args, path_to_dataset, width, height, batch_size, num_workers, name):
+    def __init__(self, args, path_to_dataset, width, height, batch_size, num_workers, name, device):
 
         self.name = name
         self.width = width
@@ -18,8 +18,7 @@ class BaseBin():
         self.num_workers = num_workers
 
         self.args = args
-        self.device = torch.device(
-            "cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = device
         self.criterion = torch.nn.CrossEntropyLoss().to(self.device)
 
         TRANSFORM_IMG = transforms.Compose([
@@ -60,7 +59,6 @@ class BaseBin():
         # Set optimizer for the local updates
         optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                      weight_decay=1e-4)
-
         model.to(self.device)
 
         num_batches = math.ceil(
@@ -69,7 +67,7 @@ class BaseBin():
         for local_epoch in range(self.args.local_ep):
             batch_loss = []
 
-            for _, (images, labels) in enumerate(self.data_loader):
+            for batch_idx, (images, labels) in enumerate(self.data_loader):
 
                 images, labels = images.to(self.device), labels.to(self.device)
 
@@ -79,7 +77,7 @@ class BaseBin():
                 loss.backward()
                 optimizer.step()
 
-                print("Batches {}/{} on local epoch {} out of {} local epochs".format(local_epoch+1,
+                print("Batches {}/{} on local epoch {} out of {} local epochs".format(batch_idx,
                                                                                       num_batches, local_epoch, self.args.local_ep), end='\r')
             batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))

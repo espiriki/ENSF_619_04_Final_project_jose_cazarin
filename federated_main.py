@@ -99,6 +99,7 @@ if __name__ == '__main__':
 
     print("Batch Size: {}".format(batch_size))
     print("Training for {} Global Epochs".format(args.epochs))
+    print("And {} Local Epochs".format(args.local_ep))
 
     WIDTH = input_size[0]
     HEIGHT = input_size[1]
@@ -119,20 +120,21 @@ if __name__ == '__main__':
     # global_dataset = torch.utils.data.Subset(
     #     global_dataset, range(n_train))
 
-    # If the batch size is too small, this means we are running out of GPU mem
-    # so limit the number of workers as well, which increases GPU mem usage
+    # If the batch size is too small, this means the model is too big, which limits
+    # the batch size that can be used. To mitigate this problem, the number of workers
+    # in the dataloader is limited, since they increase GPU mem usage
     _num_workers = 8
     if batch_size < 16:
         _num_workers = 4
 
     black_bin = base_bin.BaseBin(args, "./non_iid_dataset_rgba/black_bin",
-                                 WIDTH, HEIGHT, batch_size, _num_workers, "Black bin")
+                                 WIDTH, HEIGHT, batch_size, _num_workers, "Black bin", device)
 
     green_bin = base_bin.BaseBin(args, "./non_iid_dataset_rgba/green_bin",
-                                 WIDTH, HEIGHT, batch_size, _num_workers, "Green bin")
+                                 WIDTH, HEIGHT, batch_size, _num_workers, "Green bin", device)
 
     blue_bin = base_bin.BaseBin(args, "./non_iid_dataset_rgba/blue_bin",
-                                WIDTH, HEIGHT, batch_size, _num_workers, "Blue bin")
+                                WIDTH, HEIGHT, batch_size, _num_workers, "Blue bin", device)
 
     print("Starting training...")
 
@@ -200,11 +202,11 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Train loss')
     plt.savefig(
-        'fed_save/baseline_[M]_{}_[E]_{}_[LR]_{}_loss.png'.format(args.model, args.epochs, args.lr))
+        'fed_save/baseline_[M]_{}_[Global_E]_{}_[Local_Epochs]_[LR]_{}_loss.png'.format(args.model, args.epochs, args.local_ep, args.lr))
 
     plt.figure()
     plt.plot(range(len(epoch_train_accuracy)), epoch_train_accuracy)
     plt.xlabel('Epochs')
     plt.ylabel('Train accuracy per Epoch')
     plt.savefig(
-        'fed_save/baseline_[M]_{}_[E]_{}_[LR]_{}_accuracy_per_epoch.png'.format(args.model, args.epochs, args.lr))
+        'fed_save/baseline_[M]_{}_[Global_E]_{}_[Local_Epochs]_{}_[LR]_{}_accuracy_per_epoch.png'.format(args.model, args.epochs, args.local_ep, args.lr))
