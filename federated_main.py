@@ -16,7 +16,7 @@ from numba import cuda
 import csv
 import copy
 import base_bin
-from utils import average_weights
+from utils import weight_average_weights
 
 TEST_DATA_PATH = "./original_dataset_rgba"
 
@@ -141,21 +141,23 @@ if __name__ == '__main__':
     for epoch in range(args.epochs):
         batch_loss = []
 
-        local_weights, local_losses = [], []
+        local_weights, local_losses, samples_each_bin = [], [], []
         print("Global Training Epoch : {}".format(epoch))
 
         for bin in bins:
             local_model = bins[bin]
-            w_local_update, loss = local_model.local_update_weights(
+            w_local_update, loss, num_samples_bin = local_model.local_update_weights(
                 model=copy.deepcopy(global_model))
             local_weights.append(copy.deepcopy(w_local_update))
             local_losses.append(copy.deepcopy(loss))
+            samples_each_bin.append(num_samples_bin)
 
         print("Local training finished!\n")
         # update global weights
 
         print("Averaging weights of {} different models".format(len(local_weights)))
-        global_weights = average_weights(local_weights)
+        global_weights = weight_average_weights(
+            local_weights, samples_each_bin)
         global_model.load_state_dict(global_weights)
 
         # calculate global loss

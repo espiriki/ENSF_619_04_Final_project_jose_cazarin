@@ -99,4 +99,5 @@ class BaseBin():
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
         print("\n")
-        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+        num_samples_dataset = len(self.data_loader.dataset)
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss), num_samples_dataset
