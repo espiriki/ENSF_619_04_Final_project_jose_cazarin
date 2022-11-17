@@ -106,21 +106,11 @@ if __name__ == '__main__':
     HEIGHT = input_size[1]
     AR_INPUT = WIDTH / HEIGHT
 
+    # No augmentation since this is used just for evaluation
     TRANSFORM_IMG = transforms.Compose([
-        transforms.RandomRotation(degrees=(-90, 90), expand=True),
-        keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
         transforms.Resize(
             (WIDTH, HEIGHT), transforms.InterpolationMode.BICUBIC),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip(),
-        transforms.RandomAutocontrast(),
-        transforms.RandomPerspective(),
-        transforms.RandomAdjustSharpness(sharpness_factor=2),
-        transforms.ToTensor(),
-        # Those per-channel mean and std values were obtained using the
-        # calculate_mean_std_dataset.py script
-        transforms.Normalize([0.5599, 0.5358, 0.5033],
-                             [0.3814, 0.3761, 0.3833]),
+        transforms.ToTensor()
     ])
 
     global_dataset = torchvision.datasets.ImageFolder(
