@@ -78,6 +78,7 @@ if __name__ == '__main__':
         global_model = ResNet50()
         input_size = (400, 400)
         batch_size = 16
+        args.lr = 0.05
     elif args.model == "res152":
         global_model = ResNet152()
         input_size = (500, 500)
@@ -86,6 +87,7 @@ if __name__ == '__main__':
         global_model = ConvNextTiny()
         input_size = (224, 224)
         batch_size = 32
+        args.lr = 0.01
     elif args.model == "mb":
         global_model = MBNetLarge()
         input_size = (320, 320)
@@ -94,8 +96,8 @@ if __name__ == '__main__':
     elif args.model == "vision":
         global_model = VisionLarge32()
         input_size = (224, 224)
-        batch_size = 24
-        args.lr = 0.008
+        batch_size = 20
+        args.lr = 0.006
 
     print("Batch Size: {}".format(batch_size))
     print("Training for {} Global Epochs".format(args.epochs))
