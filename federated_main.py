@@ -78,7 +78,7 @@ if __name__ == '__main__':
         global_model = ResNet50()
         input_size = (400, 400)
         batch_size = 16
-        args.lr = 0.05
+        args.lr = 0.005
     elif args.model == "res152":
         global_model = ResNet152()
         input_size = (500, 500)
@@ -96,8 +96,8 @@ if __name__ == '__main__':
     elif args.model == "vision":
         global_model = VisionLarge32()
         input_size = (224, 224)
-        batch_size = 20
-        args.lr = 0.006
+        batch_size = 24
+        args.lr = 0.008
 
     print("Batch Size: {}".format(batch_size))
     print("Training for {} Global Epochs".format(args.epochs))
@@ -150,6 +150,7 @@ if __name__ == '__main__':
             local_model = bins[bin]
             w_local_update, loss, num_samples_bin = local_model.local_update_weights(
                 model=copy.deepcopy(global_model))
+            torch.cuda.empty_cache()
             local_weights.append(copy.deepcopy(w_local_update))
             local_losses.append(copy.deepcopy(loss))
             samples_each_bin.append(num_samples_bin)

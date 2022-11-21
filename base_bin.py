@@ -95,8 +95,12 @@ class BaseBin():
 
                 print("Batches {}/{} on local epoch {} out of {} local epochs".format(batch_idx,
                                                                                       num_batches, local_epoch, self.args.local_ep), end='\r')
+
             batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
+
+        model.to("cpu")
+        self.criterion.to("cpu")
 
         print("\n")
         num_samples_dataset = len(self.data_loader.dataset)

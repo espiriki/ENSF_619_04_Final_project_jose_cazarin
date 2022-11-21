@@ -7,6 +7,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 import math
 
+
 def calculate_acc_global_dataset(model, dataset, _batch_size, device):
 
     model.eval()
@@ -35,5 +36,6 @@ def calculate_acc_global_dataset(model, dataset, _batch_size, device):
         print("Batches {}/{} ".format(batch_idx,
                                       num_batches), end='\r')
 
+    model.to("cpu")
     accuracy = 100 * correct/total
     return accuracy
