@@ -97,9 +97,10 @@ if __name__ == '__main__':
         global_model = VisionLarge32()
         input_size = (224, 224)
         batch_size = 24
-        args.lr = 0.008
+        args.lr = 0.005
 
     print("Batch Size: {}".format(batch_size))
+    print("LR: {}".format(args.lr))
     print("Training for {} Global Epochs".format(args.epochs))
     print("And {} Local Epochs".format(args.local_ep))
 
