@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # Python version: 3.6
 
+import sys
 import numpy as np
 from cmath import sqrt
 from torchvision import transforms
@@ -12,12 +13,12 @@ from options import args_parser
 from torch.utils.data import DataLoader
 import torch
 import matplotlib.pyplot as plt
-from GPUtil import showUtilization as gpu_usage
-from numba import cuda
 import os
 import math
 import csv
 import keep_aspect_ratio
+from torchsummary import summary
+
 
 eff_net_sizes = {
     'b0': (256, 224),
@@ -26,6 +27,15 @@ eff_net_sizes = {
 }
 
 TRAIN_DATA_PATH = "./original_dataset_rgba"
+
+
+def print_summary(model, train_data):
+
+    trainloader = DataLoader(train_data, batch_size=1, shuffle=True)
+
+    for _, (image, _) in enumerate(trainloader):
+        summary(model, image)
+        break
 
 
 def free_gpu_cache():
@@ -97,6 +107,9 @@ if __name__ == '__main__':
         input_size = (224, 224)
         batch_size = 24
         args.lr = 0.008
+    else:
+        print("Invalid Model: {}".format(args.model))
+        sys.exit(1)
 
     print("Batch Size: {}".format(batch_size))
     print("Training for {} epochs".format(args.epochs))
