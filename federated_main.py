@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # Python version: 3.6
 
+import sys
 import numpy as np
 from cmath import sqrt
 from torchvision import transforms
@@ -53,8 +54,6 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    print("Model: {}".format(args.model))
-
     # Those max batch sizes were based on 8GB of GPU memory
     # which is what I have in my local PC
     global_model = EffNetB4()
@@ -98,7 +97,11 @@ if __name__ == '__main__':
         input_size = (224, 224)
         batch_size = 24
         args.lr = 0.005
+    else:
+        print("Invalid Model: {}".format(args.model))
+        sys.exit(1)
 
+    print("Model: {}".format(args.model))
     print("Batch Size: {}".format(batch_size))
     print("LR: {}".format(args.lr))
     print("Training for {} Global Epochs".format(args.epochs))
