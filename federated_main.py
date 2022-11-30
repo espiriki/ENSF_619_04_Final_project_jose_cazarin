@@ -96,7 +96,7 @@ if __name__ == '__main__':
         global_model = VisionLarge32()
         input_size = (224, 224)
         batch_size = 24
-        args.lr = 0.005
+        args.lr = 0.008
     else:
         print("Invalid Model: {}".format(args.model))
         sys.exit(1)
