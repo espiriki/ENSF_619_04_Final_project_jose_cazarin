@@ -4,6 +4,21 @@ import keep_aspect_ratio
 import torchvision
 import math
 import gc
+import albumentations as A
+import cv2
+import albumentations.pytorch as a_pytorch
+import numpy as np
+
+
+class Transforms:
+    def __init__(self, img_transf: A.Compose):
+        self.img_transf = img_transf
+
+    def __call__(self, img, *args, **kwargs):
+        img = np.array(img)
+        augmented = self.img_transf(image=img)
+        image = augmented["image"]
+        return image
 
 
 class BaseBin():
@@ -22,16 +37,20 @@ class BaseBin():
         self.criterion = torch.nn.CrossEntropyLoss().to(self.device)
 
         base_augmentations = [
-            transforms.RandomRotation(degrees=(-90, 90), expand=True),
+            A.SafeRotate(p=1.0, interpolation=cv2.INTER_CUBIC,
+                         border_mode=cv2.BORDER_CONSTANT,
+                         value=0),
             keep_aspect_ratio.PadToMaintainAR(aspect_ratio=self.aspect_ratio),
-            transforms.Resize(
-                (self.width, self.height), transforms.InterpolationMode.BICUBIC),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomVerticalFlip(),
-            transforms.RandomAutocontrast(),
-            transforms.RandomPerspective(),
-            transforms.RandomAdjustSharpness(sharpness_factor=2),
-            transforms.ToTensor()]
+            A.Resize(width=self.width,
+                     height=self.height,
+                     interpolation=cv2.INTER_CUBIC),
+            A.Flip(p=1.0),
+            A.RandomBrightnessContrast(p=1.0),
+            A.Sharpen(p=1.0),
+            A.Perspective(p=1.0, fit_output=True,
+                          keep_size=True,
+                          pad_mode=cv2.BORDER_CONSTANT,
+                          pad_val=0)]
 
         black_bin_tranforms = base_augmentations.copy()
         green_bin_tranforms = base_augmentations.copy()
@@ -39,14 +58,14 @@ class BaseBin():
 
         # Those per-channel mean and std values were obtained using the
         # calculate_mean_std_dataset.py script
-        black_bin_tranforms.append(transforms.Normalize([0.5149, 0.4969, 0.4590],
-                                                        [0.3608, 0.3542, 0.3597]))
+        black_bin_tranforms.append(A.Normalize([0.5149, 0.4969, 0.4590],
+                                               [0.3608, 0.3542, 0.3597]))
 
-        blue_bin_tranforms.append(transforms.Normalize([0.5886, 0.5712, 0.5501],
-                                                       [0.3881, 0.3829, 0.3896]))
+        blue_bin_tranforms.append(A.Normalize([0.5886, 0.5712, 0.5501],
+                                              [0.3881, 0.3829, 0.3896]))
 
-        green_bin_tranforms.append(transforms.Normalize([0.5768, 0.5347, 0.4923],
-                                                        [0.3913, 0.3880, 0.3957]))
+        green_bin_tranforms.append(A.Normalize([0.5768, 0.5347, 0.4923],
+                                               [0.3913, 0.3880, 0.3957]))
 
         transforms_to_be_used = []
         if name == "Black bin":
@@ -56,12 +75,16 @@ class BaseBin():
         elif name == "Blue bin":
             transforms_to_be_used = blue_bin_tranforms
 
+        transforms_to_be_used.append(a_pytorch.transforms.ToTensorV2())
+
+        transforms_to_be_used = A.Compose(transforms_to_be_used)
+
         self.train_data = torchvision.datasets.ImageFolder(
-            root=path_to_dataset, transform=(transforms.Compose(transforms_to_be_used)))
+            path_to_dataset, transform=Transforms(img_transf=transforms_to_be_used))
 
         self.data_loader = torch.utils.data.DataLoader(dataset=self.train_data,
                                                        batch_size=self.batch_size,
-                                                       shuffle=True, num_workers=self.num_workers)
+                                                       shuffle=True)
 
     def local_update_weights(self, model):
 
@@ -87,6 +110,7 @@ class BaseBin():
 
                 images, labels = images.to(self.device), labels.to(self.device)
 
+                images = images.float()
                 optimizer.zero_grad()
                 model_outputs = model(images)
                 loss = self.criterion(model_outputs, labels)

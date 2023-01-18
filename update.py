@@ -8,14 +8,16 @@ from torch.utils.data import DataLoader, Dataset
 import math
 
 
-def calculate_acc_global_dataset(model, dataset, _batch_size, device):
+def calculate_acc_global_dataset(model, dataset, _batch_size):
+
+    device = "cuda:0"
 
     model.eval()
     total, correct = 0.0, 0.0
-    model.to(device)
+    # model.to(device)
 
     testloader = DataLoader(dataset, batch_size=_batch_size,
-                            shuffle=False)
+                            shuffle=True, num_workers=8,pin_memory=True)
 
     num_batches = math.ceil(
         (len(testloader.dataset)/_batch_size))
@@ -36,6 +38,6 @@ def calculate_acc_global_dataset(model, dataset, _batch_size, device):
         print("Batches {}/{} ".format(batch_idx,
                                       num_batches), end='\r')
 
-    model.to("cpu")
+    # model.to("cpu")
     accuracy = 100 * correct/total
     return accuracy

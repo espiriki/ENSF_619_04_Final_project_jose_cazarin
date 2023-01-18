@@ -1,28 +1,34 @@
 import torch
 from PIL import Image
+import numpy as np
+from albumentations.core.transforms_interface import ImageOnlyTransform
+import PIL
 
 
 def add_margin(pil_img, top, right, bottom, left, color):
-    width, height = pil_img.size
-    new_width = width + right + left
-    new_height = height + top + bottom
-    result = Image.new(pil_img.mode, (new_width, new_height), color)
-    result.paste(pil_img, (left, top))
+
+    result = np.pad(
+        pil_img,
+        pad_width=((top, bottom), (left, right), (0, 0)),
+        mode='constant')
+
     return result
 
 
-class PadToMaintainAR(torch.nn.Module):
+class PadToMaintainAR(ImageOnlyTransform):
 
     def __init__(self, aspect_ratio):
         super().__init__()
         self.aspect_ratio = aspect_ratio
 
-    def forward(self, img):
+    def apply(self, img, **params):
 
-        current_aspect_ratio = img.size[0] / img.size[1]
+        size = img.shape
+
+        current_aspect_ratio = size[0] / size[1]
         target_aspect_ratio = self.aspect_ratio
-        original_width = img.size[0]
-        original_height = img.size[1]
+        original_width = size[0]
+        original_height = size[1]
         new_img = []
 
         if current_aspect_ratio == target_aspect_ratio:
@@ -45,3 +51,13 @@ class PadToMaintainAR(torch.nn.Module):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}{str(self.aspect_ratio)}"
+
+
+class PadToMaintainAR_Album(ImageOnlyTransform):
+
+    def __init__(self, aspect_ratio):
+        super().__init__()
+        self.aspect_ratio = aspect_ratio
+
+    def apply(self, img, **params):
+        return img

@@ -19,7 +19,6 @@ import csv
 import keep_aspect_ratio
 from torchsummary import summary
 
-
 eff_net_sizes = {
     'b0': (256, 224),
     'b4': (384, 380),
@@ -139,6 +138,11 @@ if __name__ == '__main__':
         root=TRAIN_DATA_PATH, transform=TRANSFORM_IMG)
 
     print("Num of training images: {}".format(len(train_data)))
+
+    # print()
+    # print_summary(global_model, train_data)
+
+    # sys.exit(0)
 
     # Send the model to GPU
     global_model.to(device)

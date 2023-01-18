@@ -14,6 +14,10 @@ def EffNetB0():
 
     return efficientnet_b0(weights=None)
 
+def EffNetB7():
+
+    return efficientnet_b7(weights=None)
+
 
 def ResNet18():
     return resnet18(weights=None)
