@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Python version: 3.6
 
 import sys
 from torchvision import transforms
@@ -20,7 +19,8 @@ import albumentations as A
 import cv2
 import albumentations.pytorch as a_pytorch
 import numpy as np
-
+import wandb
+import torch.nn as nn
 
 class Transforms:
     def __init__(self, img_transf: A.Compose):
@@ -52,19 +52,10 @@ def print_summary(model, train_data):
         summary(model, image)
         break
 
-
-def free_gpu_cache():
-    print("Initial GPU Usage")
-
-    print("GPU Usage after emptying the cache")
-
-
-def run_one_epoch(epoch, global_model, data_loader_train, len_train_data, device):
+def run_one_epoch(epoch, global_model, data_loader_train, len_train_data, device, batch_size):
 
     batch_loss = []
     num_batches = math.ceil((len_train_data/batch_size))
-
-    global_model.to(device)
 
     print("Using device: {}".format(device))
     for batch_idx, (images, labels) in enumerate(data_loader_train):
@@ -87,6 +78,66 @@ def run_one_epoch(epoch, global_model, data_loader_train, len_train_data, device
 
     return num_batches, batch_loss
 
+def calculate_train_accuracy(global_model, data_loader_train, len_train_data, device, batch_size):
+
+    correct = 0.0
+    num_batches = math.ceil((len_train_data/batch_size))
+
+    with torch.no_grad():
+        
+        for batch_idx, (images, labels) in enumerate(data_loader_train):
+
+            images, labels = images.to(device), labels.to(device)
+
+            # Inference
+            outputs = global_model(images)
+
+            # Prediction
+            _, pred_labels = torch.max(outputs, 1)
+            pred_labels = pred_labels.view(-1)
+            correct += torch.sum(torch.eq(pred_labels, labels)).item()
+
+            print("Batches {}/{} ".format(batch_idx,
+                                        num_batches), end='\r')
+
+    print("\n")
+    train_accuracy = 100 * (correct/len(train_data))
+
+    return train_accuracy
+
+def calculate_val_accuracy(global_model, data_loader_val, len_val_data, device, batch_size):
+
+    correct = 0.0
+    num_batches = math.ceil((len_val_data/batch_size))
+    with torch.no_grad():
+
+        for batch_idx, (images, labels) in enumerate(data_loader_val):
+
+            images, labels = images.to(device), labels.to(device)
+
+            # Inference
+            outputs = global_model(images)
+
+            # Prediction
+            _, pred_labels = torch.max(outputs, 1)
+            pred_labels = pred_labels.view(-1)
+            correct += torch.sum(torch.eq(pred_labels, labels)).item()
+
+            print("Batches {}/{} ".format(batch_idx,
+                                        num_batches), end='\r')
+
+    print("\n")
+    val_accuracy = 100 * (correct/len(train_data))
+    return val_accuracy
+
+def save_model_weights(global_model,args, epoch):
+
+    weights_path = BASE_PATH + "model_weights/model_{}_epoch_{}.model".format(
+    args.model, epoch+1)
+
+    print("Saving weights to {}".format(weights_path))
+
+    torch.save(global_model.state_dict(), weights_path)
 
 if __name__ == '__main__':
     args = args_parser()
@@ -104,11 +155,12 @@ if __name__ == '__main__':
     # which is what I have in my local PC
     global_model = EffNetB4()
     input_size = eff_net_sizes["b4"]
-    batch_size = 32
+    _batch_size = 32
     if args.model == "b4":
         global_model = EffNetB4()
         input_size = eff_net_sizes[args.model]
     elif args.model == "b7":
+        _batch_size = 8
         global_model = EffNetB7()
         input_size = eff_net_sizes[args.model]
     elif args.model == "b0":
@@ -136,8 +188,13 @@ if __name__ == '__main__':
         print("Invalid Model: {}".format(args.model))
         sys.exit(1)
 
-    print("Batch Size: {}".format(batch_size))
+    print("Batch Size: {}".format(_batch_size))
+    print("Learning Rate: {}".format(args.lr))
     print("Training for {} epochs".format(args.epochs))
+
+    if torch.cuda.device_count() > 1:
+        print("Using {} GPUs".format(torch.cuda.device_count()))
+        global_model = nn.DataParallel(global_model)
 
     WIDTH = input_size[0]
     HEIGHT = input_size[1]
@@ -168,102 +225,109 @@ if __name__ == '__main__':
 
     # train_data = Subset(train_data, range(1024))
 
-    train_data, validation_data = random_split(train_data, [int(
+    train_data, val_data = random_split(train_data, [int(
         math.ceil(len(train_data)*0.8)), int(math.floor(len(train_data)*0.2))])
 
     print("Num of training images: {}".format(len(train_data)))
-    print("Learning Rate: {}".format(args.lr))
+    print("Num of validaton images: {}".format(len(val_data)))
 
     optimizer = torch.optim.AdamW(global_model.parameters(), lr=args.lr)
 
-    # If the batch size is too small, this means we are running out of GPU mem
-    # so limit the number of workers as well, which increases GPU mem usage
+    # cluster says the recommended ammount is 8
     _num_workers = 8
 
     data_loader_train = torch.utils.data.DataLoader(dataset=train_data,
-                                                    batch_size=batch_size,
+                                                    batch_size=_batch_size,
                                                     shuffle=True, num_workers=_num_workers, pin_memory=True)
 
-    data_loader_val = torch.utils.data.DataLoader(dataset=validation_data,
-                                                  batch_size=batch_size,
+    data_loader_val = torch.utils.data.DataLoader(dataset=val_data,
+                                                  batch_size=_batch_size,
                                                   shuffle=True, num_workers=_num_workers, pin_memory=True)
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    epoch_loss = []
-    epoch_val_accuracy = []
+    train_loss_history = []
+    train_accuracy_history = []
+    val_accuracy_history = []
 
     print("Starting training...")
-
-    batch_idx = 0
+    global_model.to(device)
     for epoch in range(args.epochs):
-        # Set the model to train
+        
         global_model.train()
-        num_batches, batch_loss = run_one_epoch(epoch,
-                                                global_model,
-                                                data_loader_train,
-                                                len(train_data),
-                                                device)
+        num_batches, train_loss_per_batch = run_one_epoch(epoch,
+                                                          global_model,
+                                                          data_loader_train,
+                                                          len(train_data),
+                                                          device,
+                                                          _batch_size)
+
+        train_loss_avg = sum(train_loss_per_batch)/len(train_loss_per_batch)
+        train_loss_history.append(train_loss_avg)
+        print("Avg train loss on epoch {}: {:.3f}".format(epoch, train_loss_avg))
 
         global_model.eval()
-        correct = 0.0
-        print("Starting validation for epoch {}".format(epoch))
-        num_batches = math.ceil((len(validation_data)/batch_size))
-        for batch_idx, (images, labels) in enumerate(data_loader_val):
 
-            images, labels = images.to(device), labels.to(device)
+        print("Starting train accuracy calculation for epoch {}".format(epoch))
+        train_accuracy = calculate_train_accuracy(global_model,
+                                                  data_loader_train,
+                                                  len(train_data), 
+                                                  device,
+                                                  _batch_size)
 
-            # Inference
-            outputs = global_model(images)
+        print("Train set accuracy on epoch {}: {:.3f} ".format(epoch, train_accuracy))
+        train_accuracy_history.append(train_accuracy)
 
-            # Prediction
-            _, pred_labels = torch.max(outputs, 1)
-            pred_labels = pred_labels.view(-1)
-            correct += torch.sum(torch.eq(pred_labels, labels)).item()
+        print("Starting validation accuracy calculation for epoch {}".format(epoch))
+        val_accuracy = calculate_val_accuracy(global_model,
+                                              data_loader_val,
+                                              len(val_data),
+                                              device,
+                                              _batch_size)
 
-            print("Batches {}/{} ".format(batch_idx,
-                                          num_batches), end='\r')
+        print("Val set accuracy on epoch {}: {:.3f}".format(epoch, val_accuracy))
+        val_accuracy_history.append(val_accuracy)
 
-        print("\n")
-        val_accuracy = 100 * (correct/len(validation_data))
+        save_model_weights(global_model, args, epoch)
 
-        print("Val set acc on epoch {}: {:.3f}".format(epoch, val_accuracy))
-        epoch_val_accuracy.append(val_accuracy)
 
-        loss_avg = sum(batch_loss)/len(batch_loss)
-        epoch_loss.append(loss_avg)
-        print("Loss on epoch {}: {:.3f}".format(epoch, loss_avg))
-
-        weights_path = BASE_PATH + "model_weights/model_{}_epoch_{}.model".format(
-            args.model, epoch+1)
-
-        print("Saving weights to {}".format(weights_path))
-
-        torch.save(global_model.state_dict(), weights_path)
-
-        batch_idx = batch_idx + 1
-
+    # Finished training, save data
     with open(BASE_PATH + 'save/train_loss_{}.csv'.format(args.model), 'w') as f:
 
         write = csv.writer(f)
-        write.writerow(map(lambda x: [x], epoch_loss))
+        write.writerow(map(lambda x: [x], train_loss_history))
 
     with open(BASE_PATH + 'save/train_acc_{}.csv'.format(args.model), 'w') as f:
 
         write = csv.writer(f)
-        write.writerow(map(lambda x: [x], epoch_val_accuracy))
+        write.writerow(map(lambda x: [x], train_accuracy_history))
 
-    # Plot loss
-    epoch_loss = torch.FloatTensor(epoch_loss).cpu()
+    with open(BASE_PATH + 'save/val_acc_{}.csv'.format(args.model), 'w') as f:
+
+        write = csv.writer(f)
+        write.writerow(map(lambda x: [x], val_accuracy_history))        
+
+    # Plot train loss
+    train_loss_history = torch.FloatTensor(train_loss_history).cpu()
     plt.figure()
-    plt.plot(range(len(epoch_loss)), epoch_loss)
+    plt.plot(range(len(train_loss_history)), train_loss_history)
     plt.xlabel('Epochs')
     plt.ylabel('Train loss')
     plt.savefig(
-        BASE_PATH + 'save/baseline_[M]_{}_[E]_{}_[LR]_{}_loss.png'.format(args.model, args.epochs, args.lr))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_train_loss.png'.format(args.model, args.epochs, args.lr))
 
+    # Plot train accuracy
+    train_accuracy_history = torch.FloatTensor(train_accuracy_history).cpu()
     plt.figure()
-    plt.plot(range(len(epoch_val_accuracy)), epoch_val_accuracy)
+    plt.plot(range(len(train_accuracy_history)), train_accuracy_history)
     plt.xlabel('Epochs')
-    plt.ylabel('Train accuracy per Epoch')
+    plt.ylabel('Train accuracy')
     plt.savefig(
-        BASE_PATH + 'save/baseline_[M]_{}_[E]_{}_[LR]_{}_accuracy_per_epoch.png'.format(args.model, args.epochs, args.lr))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_train_accuracy.png'.format(args.model, args.epochs, args.lr))
+
+    # Plot val accuracy
+    plt.figure()
+    plt.plot(range(len(val_accuracy_history)), val_accuracy_history)
+    plt.xlabel('Epochs')
+    plt.ylabel('Val accuracy')
+    plt.savefig(
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_val_accuracy.png'.format(args.model, args.epochs, args.lr))
