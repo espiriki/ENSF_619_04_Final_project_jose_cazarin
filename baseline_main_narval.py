@@ -14,13 +14,13 @@ import matplotlib.pyplot as plt
 import math
 import csv
 import keep_aspect_ratio
-from torchsummary import summary
 import albumentations as A
 import cv2
 import albumentations.pytorch as a_pytorch
 import numpy as np
 import wandb
 import torch.nn as nn
+import pickle
 
 class Transforms:
     def __init__(self, img_transf: A.Compose):
@@ -57,6 +57,9 @@ def run_one_epoch(epoch, global_model, data_loader_train, len_train_data, device
     batch_loss = []
     num_batches = math.ceil((len_train_data/batch_size))
 
+    optimizer = torch.optim.AdamW(global_model.parameters(), lr=args.lr)
+    criterion = torch.nn.CrossEntropyLoss().to(device)
+
     print("Using device: {}".format(device))
     for batch_idx, (images, labels) in enumerate(data_loader_train):
 
@@ -80,11 +83,11 @@ def run_one_epoch(epoch, global_model, data_loader_train, len_train_data, device
 
 def calculate_train_accuracy(global_model, data_loader_train, len_train_data, device, batch_size):
 
-    correct = 0.0
+    correct = 0
     num_batches = math.ceil((len_train_data/batch_size))
 
     with torch.no_grad():
-        
+
         for batch_idx, (images, labels) in enumerate(data_loader_train):
 
             images, labels = images.to(device), labels.to(device)
@@ -101,13 +104,12 @@ def calculate_train_accuracy(global_model, data_loader_train, len_train_data, de
                                         num_batches), end='\r')
 
     print("\n")
-    train_accuracy = 100 * (correct/len(train_data))
-
+    train_accuracy = 100 * (correct/len_train_data)
     return train_accuracy
 
 def calculate_val_accuracy(global_model, data_loader_val, len_val_data, device, batch_size):
 
-    correct = 0.0
+    correct = 0
     num_batches = math.ceil((len_val_data/batch_size))
     with torch.no_grad():
 
@@ -127,7 +129,7 @@ def calculate_val_accuracy(global_model, data_loader_val, len_val_data, device, 
                                         num_batches), end='\r')
 
     print("\n")
-    val_accuracy = 100 * (correct/len(train_data))
+    val_accuracy = 100 * (correct/len_val_data)
     return val_accuracy
 
 def save_model_weights(global_model,args, epoch):
@@ -138,6 +140,38 @@ def save_model_weights(global_model,args, epoch):
     print("Saving weights to {}".format(weights_path))
 
     torch.save(global_model.state_dict(), weights_path)
+
+def get_data_from_pickle_file():
+    
+    class_0 = open(BASE_PATH + "class_0.pkl", 'rb')
+    train_data_class_0 = pickle.load(class_0)
+    
+    class_1 = open(BASE_PATH + "class_1.pkl", 'rb')
+    train_data_class_1 = pickle.load(class_1)
+    
+    class_2 = open(BASE_PATH + "class_2.pkl", 'rb')
+    train_data_class_2 = pickle.load(class_2)
+    
+    class_3 = open(BASE_PATH + "class_3.pkl", 'rb')
+    train_data_class_3 = pickle.load(class_3)
+    
+    # Using random split on each class separately, to maintain class proportion on both train and validation set
+    train_data_class_0, val_data_class_0 = random_split(train_data_class_0, [int(
+        math.ceil(len(train_data_class_0)*0.8)), int(math.floor(len(train_data_class_0)*0.2))])
+
+    train_data_class_1, val_data_class_1 = random_split(train_data_class_1, [int(
+       math.ceil(len(train_data_class_1)*0.8)), int(math.floor(len(train_data_class_1)*0.2))])
+    
+    train_data_class_2, val_data_class_2 = random_split(train_data_class_2, [int(
+       math.ceil(len(train_data_class_2)*0.8)), int(math.floor(len(train_data_class_2)*0.2))])
+    
+    train_data_class_3, val_data_class_3 = random_split(train_data_class_3, [int(
+       math.ceil(len(train_data_class_3)*0.8)), int(math.floor(len(train_data_class_3)*0.2))])    
+
+    train_data = train_data_class_0 + train_data_class_1 + train_data_class_2 + train_data_class_3
+    val_data = val_data_class_0 + val_data_class_1 + val_data_class_2 + val_data_class_3
+
+    return train_data, val_data
 
 if __name__ == '__main__':
     args = args_parser()
@@ -151,8 +185,6 @@ if __name__ == '__main__':
 
     print("Model: {}".format(args.model))
 
-    # Those max batch sizes were based on 8GB of GPU memory
-    # which is what I have in my local PC
     global_model = EffNetB4()
     input_size = eff_net_sizes["b4"]
     _batch_size = 32
@@ -188,6 +220,8 @@ if __name__ == '__main__':
         print("Invalid Model: {}".format(args.model))
         sys.exit(1)
 
+    print(global_model)
+
     print("Batch Size: {}".format(_batch_size))
     print("Learning Rate: {}".format(args.lr))
     print("Training for {} epochs".format(args.epochs))
@@ -200,38 +234,32 @@ if __name__ == '__main__':
     HEIGHT = input_size[1]
     AR_INPUT = WIDTH / HEIGHT
 
+    prob_augmentations = 0.8
+
     TRANSFORM_IMG = A.Compose([
-        A.SafeRotate(p=1.0, interpolation=cv2.INTER_CUBIC,
+        A.SafeRotate(p=prob_augmentations, interpolation=cv2.INTER_CUBIC,
                      border_mode=cv2.BORDER_CONSTANT,
                      value=0),
         keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
         A.Resize(width=WIDTH,
                  height=HEIGHT,
                  interpolation=cv2.INTER_CUBIC),
-        A.Flip(p=1.0),
-        A.RandomBrightnessContrast(p=1.0),
-        A.Sharpen(p=1.0),
-        A.Perspective(p=1.0, fit_output=True,
+        A.Flip(p=prob_augmentations),
+        A.RandomBrightnessContrast(p=prob_augmentations),
+        A.Sharpen(p=prob_augmentations),
+        A.Perspective(p=prob_augmentations, fit_output=True,
                       keep_size=True,
                       pad_mode=cv2.BORDER_CONSTANT,
                       pad_val=0),
-        A.Normalize([0.5599, 0.5358, 0.5033],
-                    [0.3814, 0.3761, 0.3833]),
+        A.Normalize([0.6958, 0.6680, 0.6307],
+                    [0.2790, 0.3010, 0.3273]),
         a_pytorch.transforms.ToTensorV2()
     ])
 
-    train_data = torchvision.datasets.ImageFolder(
-        root=TRAIN_DATA_PATH, transform=Transforms(img_transf=TRANSFORM_IMG))
-
-    # train_data = Subset(train_data, range(1024))
-
-    train_data, val_data = random_split(train_data, [int(
-        math.ceil(len(train_data)*0.8)), int(math.floor(len(train_data)*0.2))])
+    train_data, val_data = get_data_from_pickle_file()
 
     print("Num of training images: {}".format(len(train_data)))
     print("Num of validaton images: {}".format(len(val_data)))
-
-    optimizer = torch.optim.AdamW(global_model.parameters(), lr=args.lr)
 
     # cluster says the recommended ammount is 8
     _num_workers = 8
@@ -243,14 +271,14 @@ if __name__ == '__main__':
     data_loader_val = torch.utils.data.DataLoader(dataset=val_data,
                                                   batch_size=_batch_size,
                                                   shuffle=True, num_workers=_num_workers, pin_memory=True)
-
-    criterion = torch.nn.CrossEntropyLoss().to(device)
+    
     train_loss_history = []
     train_accuracy_history = []
     val_accuracy_history = []
 
     print("Starting training...")
     global_model.to(device)
+    
     for epoch in range(args.epochs):
         
         global_model.train()
@@ -322,12 +350,12 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Train accuracy')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_train_accuracy.png'.format(args.model, args.epochs, args.lr))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_train_accuracy.png'.format(args.model, args.epochs, args.lr))        
 
     # Plot val accuracy
     plt.figure()
     plt.plot(range(len(val_accuracy_history)), val_accuracy_history)
     plt.xlabel('Epochs')
-    plt.ylabel('Val accuracy')
+    plt.ylabel('Val accuracy per Epoch')
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_val_accuracy.png'.format(args.model, args.epochs, args.lr))
