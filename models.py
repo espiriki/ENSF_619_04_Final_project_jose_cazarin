@@ -13,6 +13,13 @@ def EffNetB4(num_classes = 4):
                                     out_features=num_classes)   
     return model
 
+def EffNetB5(num_classes = 4):
+
+    model = efficientnet_b5(weights=None)
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
+                                    out_features=num_classes)   
+    return model
 
 def EffNetB0(num_classes = 4):
 
@@ -75,4 +82,12 @@ def VisionLarge32(num_classes = 4):
     _in_features = model.heads.head.in_features
     model.heads.head = nn.Linear(in_features=_in_features,
                                     out_features=num_classes)
+    return model
+
+def VisionB32(num_classes = 4):
+    model = vit_b_16(weights=None)
+    _in_features = model.heads.head.in_features
+    model.heads.head = nn.Linear(in_features=_in_features,
+                                     out_features=num_classes)
+
     return model
