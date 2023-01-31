@@ -21,7 +21,7 @@ import numpy as np
 import wandb
 import torch.nn as nn
 import itertools
-from itertools import groupby
+from CustomImageFolder import CustomImageFolder
 
 
 class Transforms:
@@ -138,7 +138,7 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
 
 def save_model_weights(model, model_name, epoch_num, val_acc):
 
-    weights_path = BASE_PATH + "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{}_.model".format(
+    weights_path = BASE_PATH + "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{:.3f}_.model".format(
         model_name, epoch_num+1, args.lr, args.reg, val_acc)
 
     print("Saving weights to {}".format(weights_path))
@@ -146,36 +146,29 @@ def save_model_weights(model, model_name, epoch_num, val_acc):
     torch.save(model.state_dict(), weights_path)
 
 
-def calculate_mean_std_train_dataset():
+def calculate_mean_std_train_dataset(stats_train_data, pipeline):
 
-    ORIGINAL_IMAGE = A.Compose([
-        a_pytorch.transforms.ToTensorV2()
-    ])
+    stats_train_data = CustomImageFolder(root=None, custom_samples=stats_train_data,
+                                         transform=Transforms(img_transf=pipeline))
 
-    my_data = torchvision.datasets.ImageFolder(
-        root=TRAIN_DATA_PATH, transform=Transforms(img_transf=ORIGINAL_IMAGE))
+    stats_loader = torch.utils.data.DataLoader(dataset=stats_train_data,
+                                               batch_size=32,
+                                               shuffle=True, num_workers=8, pin_memory=True)
 
-    train, _ = random_split(my_data, [int(
-        math.ceil(len(my_data)*0.8)), int(math.floor(len(my_data)*0.2))], generator=torch.Generator().manual_seed(42))
+    channels_sum, channels_squared_sum, num_batches = 0, 0, 0
 
-    channels_sum = 0
-    channels_squared_sum = 0
-    num_images = 0
-    for element in train:
-        image = element[0]
-        channels_sum += torch.mean(image*1.0, dim=[1, 2])
-        channels_squared_sum += torch.mean((image*1.0)**2, dim=[1, 2])
-        num_images += 1
+    for _, (images, _) in enumerate(stats_loader):
 
-    mean = (channels_sum / num_images)/255
+        channels_sum += torch.mean(images*1.0, dim=[0, 2, 3])
+        channels_squared_sum += torch.mean((images**2)*1.0, dim=[0, 2, 3])
+        num_batches += 1
+
+    mean = (channels_sum / num_batches)/255
 
     # std = sqrt(E[X^2] - (E[X])^2)
-    std = (torch.sqrt((channels_squared_sum / num_images) - mean ** 2))/255
+    std = (torch.sqrt((channels_squared_sum / num_batches) - mean ** 2))/255
 
-    print(mean)
-    print(std)
-
-    return 0, 0
+    return mean, std
 
 
 if __name__ == '__main__':
@@ -186,7 +179,9 @@ if __name__ == '__main__':
     else:
         print("GPU OK!!!")
 
+    # This is to make results predictable, when splitting the dataset into train/val/test
     torch.manual_seed(42)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("Model: {}".format(args.model))
@@ -248,72 +243,21 @@ if __name__ == '__main__':
     HEIGHT = input_size[1]
     AR_INPUT = WIDTH / HEIGHT
 
-    prob_augmentations = 0.5
-
-    # mean_train_dataset, std_train_dataset = calculate_mean_std_train_dataset()
-    mean_train_dataset = [0.6958, 0.6680, 0.6307]
-    std_train_dataset = [0.2790, 0.3010, 0.3273]
-
-    normalize_transform = A.Normalize(mean_train_dataset,
-                                      std_train_dataset)
-
-    TRANSFORM_IMG = A.Compose([
-        A.SafeRotate(p=prob_augmentations, interpolation=cv2.INTER_CUBIC,
-                     border_mode=cv2.BORDER_CONSTANT,
-                     value=0),
-        keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
+    STATS_PIPELINE = A.Compose([
         A.Resize(width=WIDTH,
                  height=HEIGHT,
                  interpolation=cv2.INTER_CUBIC),
-        A.VerticalFlip(p=prob_augmentations),
-        A.HorizontalFlip(p=prob_augmentations),
-        A.RandomBrightnessContrast(p=prob_augmentations),
-        # A.Sharpen(p=prob_augmentations),
-        A.Perspective(p=prob_augmentations, fit_output=True,
-                      keep_size=True,
-                      pad_mode=cv2.BORDER_CONSTANT,
-                      pad_val=0),
-        # A.Blur(p=prob_augmentations),
-        # A.Downscale(p=prob_augmentations,
-        #             interpolation=dict(downscale=cv2.INTER_CUBIC,
-        #                                upscale=cv2.INTER_CUBIC)),
-        # A.GaussNoise(p=prob_augmentations, per_channel=True),
-        # A.RandomFog(p=prob_augmentations),
-        normalize_transform,
         a_pytorch.transforms.ToTensorV2()
     ])
 
-    NO_AUG = A.Compose([
-        A.Resize(width=WIDTH,
-                 height=HEIGHT,
-                 interpolation=cv2.INTER_CUBIC),
-        normalize_transform,
-        a_pytorch.transforms.ToTensorV2()
-    ])
-
-    all_data_img_folder = torchvision.datasets.ImageFolder(
-        root=TRAIN_DATA_PATH, transform=Transforms(img_transf=TRANSFORM_IMG))
-
-    val_data_img_folder = torchvision.datasets.ImageFolder(
-        root=TRAIN_DATA_PATH, transform=Transforms(img_transf=NO_AUG))
-
-    # all_data_img_folder = Subset(all_data_img_folder, range(20))
-    # val_data_img_folder = Subset(val_data_img_folder, range(20))
-
-    print("Splitting the dataset per class...")
-
-    per_class_splitted_all_data = [[], [], [], []]
-    per_class_splitted_val_data = [[], [], [], []]
-
-    for element_all, element_val in zip(all_data_img_folder, val_data_img_folder):
-        per_class_splitted_all_data[element_all[1]].append(element_all)
-        per_class_splitted_val_data[element_val[1]].append(element_val)
+    all_data_img_folder = CustomImageFolder(root=TRAIN_DATA_PATH)
+    val_data_img_folder = CustomImageFolder(root=TRAIN_DATA_PATH)
 
     VALID_SPLIT = 0.8
 
     train_data_per_class = []
     val_data_per_class = []
-    for all_data, val_data in zip(per_class_splitted_all_data, per_class_splitted_val_data):
+    for all_data, val_data in zip(all_data_img_folder.per_class, val_data_img_folder.per_class):
 
         all_data_class = all_data
         val_data_class = val_data
@@ -326,36 +270,60 @@ if __name__ == '__main__':
         train_data_per_class.append(dataset_train)
         val_data_per_class.append(dataset_val)
 
+    # Flatenning the list of lists (one list per class) into a single list
     train_data = list(itertools.chain.from_iterable(train_data_per_class))
-
     val_data = list(itertools.chain.from_iterable(val_data_per_class))
-
-    # per_class_splitted_all_data = [list(g)
-    #                                for _, g in groupby(all_data_img_folder, lambda x: x[1])]
-
-    # train_data_class_0, val_data_class_0 = random_split(all_data_class_0, [int(
-    #     math.ceil(len(all_data_class_0)*0.8)), int(math.floor(len(all_data_class_0)*0.2))],
-    #     generator=torch.Generator().manual_seed(42))
-
-    # train_data_class_1, val_data_class_1 = random_split(all_data_class_1, [int(
-    #     math.ceil(len(all_data_class_1)*0.8)), int(math.floor(len(all_data_class_1)*0.2))],
-    #     generator=torch.Generator().manual_seed(42))
-
-    # train_data_class_2, val_data_class_2 = random_split(all_data_class_2, [int(
-    #     math.ceil(len(all_data_class_2)*0.8)), int(math.floor(len(all_data_class_2)*0.2))],
-    #     generator=torch.Generator().manual_seed(42))
-
-    # train_data_class_3, val_data_class_3 = random_split(all_data_class_3, [int(
-    #     math.ceil(len(all_data_class_3)*0.8)), int(math.floor(len(all_data_class_3)*0.2))],
-    #     generator=torch.Generator().manual_seed(42))
-
-    # all_data = train_data_class_0 + train_data_class_1 + \
-    #     train_data_class_2 + train_data_class_3
-    # val_data = val_data_class_0 + val_data_class_1 + \
-    #     val_data_class_2 + val_data_class_3
 
     print("Num of training images: {}".format(len(train_data)))
     print("Num of validaton images: {}".format(len(val_data)))
+
+    # print("Calculating Train Dataset statistics...")
+    # mean_train_dataset, std_train_dataset = calculate_mean_std_train_dataset(
+    #     train_data, STATS_PIPELINE)
+
+    mean_train_dataset = [0.6963, 0.6683, 0.6307]
+    std_train_dataset = [0.0353, 0.0355, 0.0353]
+
+    print("Mean Train Dataset: {}, STD Train Dataset: {}".format(
+        mean_train_dataset, std_train_dataset))
+
+    prob_augmentations = 0.5
+
+    normalize_transform = A.Normalize(mean=mean_train_dataset,
+                                      std=std_train_dataset, always_apply=True)
+
+    TRAIN_PIPELINE = A.Compose([
+        A.VerticalFlip(p=prob_augmentations),
+        A.HorizontalFlip(p=prob_augmentations),
+        A.RandomBrightnessContrast(p=prob_augmentations),
+        A.Sharpen(p=prob_augmentations),
+        A.Perspective(p=prob_augmentations,
+                      pad_mode=cv2.BORDER_CONSTANT,
+                      pad_val=0),
+        A.Rotate(p=prob_augmentations, interpolation=cv2.INTER_CUBIC,
+                 border_mode=cv2.BORDER_CONSTANT,
+                 value=0, crop_border=True),
+        keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
+        A.Resize(width=WIDTH,
+                 height=HEIGHT,
+                 interpolation=cv2.INTER_CUBIC),
+        # normalize_transform,
+        a_pytorch.transforms.ToTensorV2()
+    ])
+
+    VALIDATION_PIPELINE = A.Compose([
+        A.Resize(width=WIDTH,
+                 height=HEIGHT,
+                 interpolation=cv2.INTER_CUBIC),
+        # normalize_transform,
+        a_pytorch.transforms.ToTensorV2()
+    ])
+
+    train_data = CustomImageFolder(root=None, custom_samples=train_data,
+                                   transform=Transforms(img_transf=TRAIN_PIPELINE))
+
+    val_data = CustomImageFolder(root=None, custom_samples=val_data,
+                                 transform=Transforms(img_transf=VALIDATION_PIPELINE))
 
     # cluster says the recommended ammount is 8
     _num_workers = 8
