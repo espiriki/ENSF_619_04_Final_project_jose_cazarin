@@ -307,7 +307,7 @@ if __name__ == '__main__':
         A.Resize(width=WIDTH,
                  height=HEIGHT,
                  interpolation=cv2.INTER_CUBIC),
-        # normalize_transform,
+        normalize_transform,
         a_pytorch.transforms.ToTensorV2()
     ])
 
@@ -315,7 +315,7 @@ if __name__ == '__main__':
         A.Resize(width=WIDTH,
                  height=HEIGHT,
                  interpolation=cv2.INTER_CUBIC),
-        # normalize_transform,
+        normalize_transform,
         a_pytorch.transforms.ToTensorV2()
     ])
 
