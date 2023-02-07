@@ -18,10 +18,13 @@ import albumentations as A
 import cv2
 import albumentations.pytorch as a_pytorch
 import numpy as np
-import wandb
+# import wandb
 import torch.nn as nn
 import itertools
+import time
 from CustomImageFolder import CustomImageFolder
+from torchmetrics.classification import ConfusionMatrix
+import ssl
 
 
 class Transforms:
@@ -48,13 +51,13 @@ BASE_PATH = "/project/def-rmsouza/jocazar/"
 TRAIN_DATA_PATH = BASE_PATH + "original_dataset_rgba"
 
 
-def run_one_epoch(epoch_num, model, data_loader, len_train_data, hw_device, batch_size):
+def run_one_epoch(epoch_num, model, data_loader, len_train_data, hw_device, batch_size, learning_rate):
 
     batch_loss = []
     n_batches = math.ceil((len_train_data/batch_size))
 
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=args.lr, weight_decay=args.reg)
+        model.parameters(), lr=learning_rate, weight_decay=args.reg)
     criterion = torch.nn.CrossEntropyLoss().to(hw_device)
 
     print("Using device: {}".format(hw_device))
@@ -112,6 +115,10 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
 
     correct = 0
     n_batches = math.ceil((len_val_data/batch_size))
+
+    all_preds = []
+    all_labels = []
+    confmat = ConfusionMatrix(task="multiclass", num_classes=4)
     with torch.no_grad():
 
         for batch_idx, (images, labels) in enumerate(data_loader):
@@ -124,26 +131,35 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
             # Prediction
             _, pred_labels = torch.max(outputs, 1)
             pred_labels = pred_labels.view(-1)
+
+            all_preds.append(pred_labels)
+            all_labels.append(labels)
+
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
 
             print("Batches {}/{} ".format(batch_idx,
                                           n_batches), end='\r')
 
-    print("\n")
-    print("samples checked for val: {}".format(len_val_data))
-    print("correct samples for val: {}".format(correct))
+    all_preds = [item for sublist in all_preds for item in sublist]
+    all_labels = [item for sublist in all_labels for item in sublist]
+    print(confmat(torch.tensor(all_labels), torch.tensor(all_preds)))
+
     val_acc = 100 * (correct/len_val_data)
     return val_acc
 
 
-def save_model_weights(model, model_name, epoch_num, val_acc):
+def save_model_weights(model, model_name, epoch_num, val_acc, hw_device):
 
     weights_path = BASE_PATH + "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{:.3f}_.model".format(
         model_name, epoch_num+1, args.lr, args.reg, val_acc)
 
+    model.to("cpu")
+
     print("Saving weights to {}".format(weights_path))
 
     torch.save(model.state_dict(), weights_path)
+
+    model.to(hw_device)
 
 
 def calculate_mean_std_train_dataset(stats_train_data, pipeline):
@@ -174,10 +190,28 @@ def calculate_mean_std_train_dataset(stats_train_data, pipeline):
 if __name__ == '__main__':
     args = args_parser()
 
+    ssl._create_default_https_context = ssl._create_unverified_context
+
     if not torch.cuda.is_available():
         print("GPU not available!!!!")
     else:
         print("GPU OK!!!")
+
+    if args.tl is True:
+        print("In Transfer Learning mode!!!")
+
+    config = dict(
+        learning_rate=args.lr,
+        architecture=args.model,
+        regularization=args.reg,
+        num_epochs=args.epochs,
+        dataset_id="garbage",
+    )
+
+    # run = wandb.init(
+    #     project="Garbage Classification",
+    #     config=config,
+    # )
 
     # This is to make results predictable, when splitting the dataset into train/val/test
     torch.manual_seed(42)
@@ -186,54 +220,57 @@ if __name__ == '__main__':
 
     print("Model: {}".format(args.model))
 
-    global_model = EffNetB4()
+    global_model = EffNetB4(4, args.tl)
     input_size = eff_net_sizes["b4"]
     _batch_size = 32
     if args.model == "b4":
-        global_model = EffNetB4()
+        global_model = EffNetB4(4, args.tl)
         input_size = eff_net_sizes[args.model]
     elif args.model == "b5":
-        global_model = EffNetB5()
+        global_model = EffNetB5(4, args.tl)
         input_size = eff_net_sizes[args.model]
         _batch_size = 16
     elif args.model == "b7":
         _batch_size = 8
-        global_model = EffNetB7()
+        global_model = EffNetB7(4, args.tl)
         input_size = eff_net_sizes[args.model]
     elif args.model == "b0":
-        global_model = EffNetB0()
+        global_model = EffNetB0(4, args.tl)
         input_size = eff_net_sizes[args.model]
+        _batch_size = 40
     elif args.model == "res18":
-        global_model = ResNet18()
+        global_model = ResNet18(4, args.tl)
         input_size = (300, 300)
     elif args.model == "res50":
-        global_model = ResNet50()
+        global_model = ResNet50(4, args.tl)
         input_size = (400, 400)
     elif args.model == "res152":
-        global_model = ResNet152()
+        global_model = ResNet152(4, args.tl)
         input_size = (500, 500)
     elif args.model == "next_tiny":
-        global_model = ConvNextTiny()
+        global_model = ConvNextTiny(4, args.tl)
         input_size = (224, 224)
     elif args.model == "mb":
-        global_model = MBNetLarge()
+        global_model = MBNetLarge(4, args.tl)
         input_size = (320, 320)
     elif args.model == "vision":
-        global_model = VisionLarge32()
+        global_model = VisionLarge32(4, args.tl)
         input_size = (224, 224)
     elif args.model == "visionb":
-        global_model = VisionB32()
+        global_model = VisionB32(4, args.tl)
         input_size = (224, 224)
     else:
         print("Invalid Model: {}".format(args.model))
         sys.exit(1)
 
-    print(global_model)
-
     print("Batch Size: {}".format(_batch_size))
     print("Learning Rate: {}".format(args.lr))
     print("Training for {} epochs".format(args.epochs))
     print("Regularization Rate: {}".format(args.reg))
+
+    print(global_model)
+
+    # wandb.watch(global_model)
 
     if torch.cuda.device_count() > 1:
         print("Using {} GPUs".format(torch.cuda.device_count()))
@@ -251,22 +288,28 @@ if __name__ == '__main__':
     ])
 
     all_data_img_folder = CustomImageFolder(root=TRAIN_DATA_PATH)
-    val_data_img_folder = CustomImageFolder(root=TRAIN_DATA_PATH)
+
+    print("Total num of images: {}".format(len(all_data_img_folder)))
+    for i in range(4):
+        len_samples = len(all_data_img_folder.per_class[i])
+        print("Num of samples for class {}: {}. Percentage of dataset: {:.2f}".format(
+            i, len_samples, (len_samples/len(all_data_img_folder))*100))
 
     VALID_SPLIT = 0.8
 
     train_data_per_class = []
     val_data_per_class = []
-    for all_data, val_data in zip(all_data_img_folder.per_class, val_data_img_folder.per_class):
 
-        all_data_class = all_data
-        val_data_class = val_data
+    # Splitting the dataset while maintaning class proportions
+    for all_data_current_class in all_data_img_folder.per_class:
 
-        class_dataset_size = len(all_data_class)
-        valid_size = int(VALID_SPLIT*class_dataset_size)
+        class_dataset_size = len(all_data_current_class)
         indices = torch.randperm(class_dataset_size).tolist()
-        dataset_val = Subset(all_data_class, indices[:-valid_size])
-        dataset_train = Subset(val_data_class, indices[-valid_size:])
+        split_size = int(VALID_SPLIT*class_dataset_size)
+
+        dataset_train = Subset(all_data_current_class, indices[:split_size])
+        dataset_val = Subset(all_data_current_class, indices[split_size:])
+
         train_data_per_class.append(dataset_train)
         val_data_per_class.append(dataset_val)
 
@@ -274,8 +317,19 @@ if __name__ == '__main__':
     train_data = list(itertools.chain.from_iterable(train_data_per_class))
     val_data = list(itertools.chain.from_iterable(val_data_per_class))
 
+    # print("Common images: {}".format(len(list(set(train_data).intersection(val_data)))))
+
     print("Num of training images: {}".format(len(train_data)))
+    for i in range(4):
+        len_samples = len(train_data_per_class[i])
+        print("Num of training samples for class {}: {}. Percentage of dataset: {:.2f}".format(
+            i, len_samples, (len_samples/len(train_data))*100))
+
     print("Num of validaton images: {}".format(len(val_data)))
+    for i in range(4):
+        len_samples = len(val_data_per_class[i])
+        print("Num of validation samples for class {}: {}. Percentage of dataset: {:.2f}".format(
+            i, len_samples, (len_samples/len(val_data))*100))
 
     # print("Calculating Train Dataset statistics...")
     # mean_train_dataset, std_train_dataset = calculate_mean_std_train_dataset(
@@ -293,13 +347,6 @@ if __name__ == '__main__':
                                       std=std_train_dataset, always_apply=True)
 
     TRAIN_PIPELINE = A.Compose([
-        A.VerticalFlip(p=prob_augmentations),
-        A.HorizontalFlip(p=prob_augmentations),
-        A.RandomBrightnessContrast(p=prob_augmentations),
-        A.Sharpen(p=prob_augmentations),
-        A.Perspective(p=prob_augmentations,
-                      pad_mode=cv2.BORDER_CONSTANT,
-                      pad_val=0),
         A.Rotate(p=prob_augmentations, interpolation=cv2.INTER_CUBIC,
                  border_mode=cv2.BORDER_CONSTANT,
                  value=0, crop_border=True),
@@ -307,11 +354,19 @@ if __name__ == '__main__':
         A.Resize(width=WIDTH,
                  height=HEIGHT,
                  interpolation=cv2.INTER_CUBIC),
+        A.VerticalFlip(p=prob_augmentations),
+        A.HorizontalFlip(p=prob_augmentations),
+        A.RandomBrightnessContrast(p=prob_augmentations),
+        A.Sharpen(p=prob_augmentations),
+        A.Perspective(p=prob_augmentations,
+                      pad_mode=cv2.BORDER_CONSTANT,
+                      pad_val=0),
         normalize_transform,
         a_pytorch.transforms.ToTensorV2()
     ])
 
     VALIDATION_PIPELINE = A.Compose([
+        keep_aspect_ratio.PadToMaintainAR(aspect_ratio=AR_INPUT),
         A.Resize(width=WIDTH,
                  height=HEIGHT,
                  interpolation=cv2.INTER_CUBIC),
@@ -326,7 +381,7 @@ if __name__ == '__main__':
                                  transform=Transforms(img_transf=VALIDATION_PIPELINE))
 
     # cluster says the recommended ammount is 8
-    _num_workers = 8
+    _num_workers = 16
 
     data_loader_train = torch.utils.data.DataLoader(dataset=train_data,
                                                     batch_size=_batch_size,
@@ -347,15 +402,22 @@ if __name__ == '__main__':
     for epoch in range(args.epochs):
 
         global_model.train()
+        st = time.time()
         num_batches, train_loss_per_batch = run_one_epoch(epoch,
                                                           global_model,
                                                           data_loader_train,
                                                           len(train_data),
                                                           device,
-                                                          _batch_size)
+                                                          _batch_size,
+                                                          args.lr)
+
+        elapsed_time = time.time() - st
+        print('Epoch time: {:.1f}'.format(elapsed_time))
 
         train_loss_avg = np.average(train_loss_per_batch)
         train_loss_history.append(train_loss_avg)
+
+        # wandb.log({'train_loss_avg': train_loss_avg,  'epoch': epoch})
 
         print("Avg train loss on epoch {}: {:.3f}".format(epoch, train_loss_avg))
         print("Max train loss on epoch {}: {:.3f}".format(
@@ -372,35 +434,107 @@ if __name__ == '__main__':
                                                   device,
                                                   _batch_size)
 
+        # wandb.log({'train_accuracy_history': train_accuracy,  'epoch': epoch})
+
         print("Train set accuracy on epoch {}: {:.3f} ".format(
             epoch, train_accuracy))
         train_accuracy_history.append(train_accuracy)
 
         print("Starting validation accuracy calculation for epoch {}".format(epoch))
+        print(all_data_img_folder.class_to_idx)
         val_accuracy = calculate_val_accuracy(global_model,
                                               data_loader_val,
                                               len(val_data),
                                               device,
                                               _batch_size)
 
+        # wandb.log({'val_accuracy_history': val_accuracy_history,  'epoch': epoch})
+
         print("Val set accuracy on epoch {}: {:.3f}".format(epoch, val_accuracy))
         val_accuracy_history.append(val_accuracy)
 
         if val_accuracy > max_val_accuracy:
             print("Best model obtained based on Val Acc. Saving it!")
-            save_model_weights(global_model, args.model, epoch, val_accuracy)
+            save_model_weights(global_model, args.model,
+                               epoch, val_accuracy, device)
             max_val_accuracy = val_accuracy
         else:
             print("Not saving model, best Val Acc so far: {:.3f}".format(
                 max_val_accuracy))
 
+    # Fine tuning loop
+    if args.tl is True:
+
+        # set all model parameters to train
+        for param in global_model.parameters():
+            param.requires_grad = True
+
+        for epoch in range(args.ft_epochs):
+
+            st = time.time()
+            # train using a small learning rate
+            ft_num_batches, ft_train_loss_per_batch = run_one_epoch(epoch,
+                                                                    global_model,
+                                                                    data_loader_train,
+                                                                    len(train_data),
+                                                                    device,
+                                                                    _batch_size,
+                                                                    args.lr/args.fraction_lr)
+            elapsed_time = time.time() - st
+            print('Fine Tuning: epoch time: {:.1f}'.format(elapsed_time))
+
+            ft_train_loss_avg = np.average(ft_train_loss_per_batch)
+
+            # wandb.log({'train_loss_avg': train_loss_avg,  'epoch': epoch})
+
+            print("Fine Tuning: avg train loss on epoch {}: {:.3f}".format(
+                epoch, ft_train_loss_avg))
+            print("Fine Tuning: max train loss on epoch {}: {:.3f}".format(
+                epoch, np.max(ft_train_loss_per_batch)))
+            print("Fine Tuning: min train loss on epoch {}: {:.3f}".format(
+                epoch, np.min(ft_train_loss_per_batch)))
+
+            global_model.eval()
+
+            print(
+                "Fine Tuning: starting train accuracy calculation for epoch {}".format(epoch))
+            train_accuracy = calculate_train_accuracy(global_model,
+                                                      data_loader_train,
+                                                      len(train_data),
+                                                      device,
+                                                      _batch_size)
+
+            # wandb.log({'train_accuracy_history': train_accuracy,  'epoch': epoch})
+
+            print("Fine Tuning: train set accuracy on epoch {}: {:.3f} ".format(
+                epoch, train_accuracy))
+            train_accuracy_history.append(train_accuracy)
+
+            print(
+                "Fine Tuning: starting validation accuracy calculation for epoch {}".format(epoch))
+            print(all_data_img_folder.class_to_idx)
+            val_accuracy = calculate_val_accuracy(global_model,
+                                                  data_loader_val,
+                                                  len(val_data),
+                                                  device,
+                                                  _batch_size)
+
+            if val_accuracy > max_val_accuracy:
+                print("Fine Tuning: best model obtained based on Val Acc. Saving it!")
+                save_model_weights(global_model, args.model,
+                                   epoch, val_accuracy, device)
+                max_val_accuracy = val_accuracy
+            else:
+                print("Fine Tuning: not saving model, best Val Acc so far: {:.3f}".format(
+                    max_val_accuracy))
+
     # Finished training, save data
-    with open(BASE_PATH + 'save/train_loss_{}.csv'.format(args.model), 'w') as f:
+    with open(BASE_PATH + 'save/train_loss_model_{}_LR_{}_REG_{}.csv'.format(args.model, args.lr, args.reg), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: [x], train_loss_history))
 
-    with open(BASE_PATH + 'save/train_acc_{}.csv'.format(args.model), 'w') as f:
+    with open(BASE_PATH + 'save/train_acc_model_{}_LR_{}_REG_{}.csv'.format(args.model, args.lr, args.reg), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: [x], train_accuracy_history))
@@ -417,7 +551,7 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Train loss')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_train_loss.png'.format(args.model, args.epochs, args.lr))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_train_loss.png'.format(args.model, args.epochs, args.lr, args.reg))
 
     # Plot train accuracy
     train_accuracy_history = torch.FloatTensor(train_accuracy_history).cpu()
@@ -426,7 +560,7 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Train accuracy')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_train_accuracy.png'.format(args.model, args.epochs, args.lr))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_train_accuracy.png'.format(args.model, args.epochs, args.lr, args.reg))
 
     # Plot val accuracy
     plt.figure()
@@ -434,4 +568,6 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Val accuracy per Epoch')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_val_accuracy.png'.format(args.model, args.epochs, args.lr))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_val_accuracy.png'.format(args.model, args.epochs, args.lr, args.reg))
+
+    # run.finish()

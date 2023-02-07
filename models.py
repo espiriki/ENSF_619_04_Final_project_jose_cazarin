@@ -5,89 +5,213 @@
 from torchvision.models import *
 import torch.nn as nn
 
-def EffNetB4(num_classes = 4):
 
-    model = efficientnet_b4(weights=None)
+def EffNetB4(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_b4(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
     _in_features = model.classifier[1].in_features
     model.classifier[1] = nn.Linear(in_features=_in_features,
-                                    out_features=num_classes)   
-    return model
-
-def EffNetB5(num_classes = 4):
-
-    model = efficientnet_b5(weights=None)
-    _in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features=_in_features,
-                                    out_features=num_classes)   
-    return model
-
-def EffNetB0(num_classes = 4):
-
-    model = efficientnet_b0(weights=None)
-    _in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features=_in_features,
-                                    out_features=num_classes)   
-    return model
-
-def EffNetB7(num_classes = 4):
-
-    model = efficientnet_b7(weights=None)
-    _in_features = model.classifier[1].in_features
-    model.classifier[1] = nn.Linear(in_features=_in_features,
-                                    out_features=num_classes)   
-    return model
-
-
-def ResNet18(num_classes = 4):
-    model = resnet18(weights=None)
-    _in_features = model.fc.in_features
-    model.fc = nn.Linear(in_features=_in_features,
                                     out_features=num_classes)
+
     return model
 
-def ResNet50(num_classes = 4):
-    model = resnet50(weights=None)
-    _in_features = model.fc.in_features
-    model.fc = nn.Linear(in_features=_in_features,
+
+def EffNetB5(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_b5(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
                                     out_features=num_classes)
     return model
 
 
-def ResNet152(num_classes = 4):
-    model = resnet152(weights=None)
-    _in_features = model.fc.in_features
-    model.fc = nn.Linear(in_features=_in_features,
+def EffNetB0(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_b0(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
                                     out_features=num_classes)
     return model
 
 
-def ConvNextTiny(num_classes = 4):
-    model = convnext_tiny(weights=None)
+def EffNetB7(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_b7(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
+                                    out_features=num_classes)
+    return model
+
+
+def ResNet18(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = resnet18(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.fc.in_features
+    model.fc = nn.Linear(in_features=_in_features,
+                         out_features=num_classes)
+    return model
+
+
+def ResNet50(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = resnet50(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.fc.in_features
+    model.fc = nn.Linear(in_features=_in_features,
+                         out_features=num_classes)
+    return model
+
+
+def ResNet152(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = resnet152(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.fc.in_features
+    model.fc = nn.Linear(in_features=_in_features,
+                         out_features=num_classes)
+    return model
+
+
+def ConvNextTiny(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = convnext_tiny(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
     _in_features = model.classifier[2].in_features
     model.classifier[2] = nn.Linear(in_features=_in_features,
                                     out_features=num_classes)
     return model
 
 
-def MBNetLarge(num_classes = 4):
-    model = mobilenet_v3_large(weights=None)
+def MBNetLarge(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = mobilenet_v3_large(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
     _in_features = model.classifier[3].in_features
     model.classifier[3] = nn.Linear(in_features=_in_features,
                                     out_features=num_classes)
     return model
 
 
-def VisionLarge32(num_classes = 4):
-    model = vit_l_32(weights=None)
+def VisionLarge32(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = vit_l_32(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
     _in_features = model.heads.head.in_features
     model.heads.head = nn.Linear(in_features=_in_features,
-                                    out_features=num_classes)
+                                 out_features=num_classes)
     return model
 
-def VisionB32(num_classes = 4):
-    model = vit_b_16(weights=None)
+
+def VisionB32(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = vit_b_16(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
     _in_features = model.heads.head.in_features
     model.heads.head = nn.Linear(in_features=_in_features,
-                                     out_features=num_classes)
+                                 out_features=num_classes)
 
     return model
