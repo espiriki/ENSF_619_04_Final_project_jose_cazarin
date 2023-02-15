@@ -515,7 +515,7 @@ if __name__ == '__main__':
         if val_accuracy > max_val_accuracy:
             print("Best model obtained based on Val Acc. Saving it!")
             save_model_weights(global_model, args.model,
-                               epoch, val_accuracy, device, False)
+                               epoch, val_accuracy, device, False, args.use_class_weights)
             max_val_accuracy = val_accuracy
             best_epoch = epoch
         else:
@@ -595,7 +595,7 @@ if __name__ == '__main__':
             if val_accuracy > max_val_accuracy:
                 print("Fine Tuning: best model obtained based on Val Acc. Saving it!")
                 save_model_weights(global_model, args.model,
-                                   epoch, val_accuracy, device, True)
+                                   epoch, val_accuracy, device, True, args.use_class_weights)
                 best_epoch = epoch
                 max_val_accuracy = val_accuracy
             else:
