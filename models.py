@@ -5,6 +5,63 @@
 from torchvision.models import *
 import torch.nn as nn
 
+def EffNetV2_L(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_v2_l(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
+                                    out_features=num_classes)
+
+    return model
+
+def EffNetV2_M(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_v2_m(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
+                                    out_features=num_classes)
+
+    return model
+
+
+def EffNetV2_S(num_classes=4, transfer_learning=False):
+
+    if transfer_learning:
+        _weights = 'IMAGENET1K_V1'
+    else:
+        _weights = None
+
+    model = efficientnet_v2_s(weights=_weights)
+
+    if transfer_learning:
+        for param in model.parameters():
+            param.requires_grad = False
+
+    _in_features = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(in_features=_in_features,
+                                    out_features=num_classes)
+
+    return model
 
 def EffNetB4(num_classes=4, transfer_learning=False):
 

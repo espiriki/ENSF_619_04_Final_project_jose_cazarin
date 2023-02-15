@@ -20,7 +20,8 @@ def args_parser():
                         help='fine tuning epochs')
     parser.add_argument('--fraction_lr', type=float, default=5,
                         help='value to divide the regular LR for to use in fine tuning')
-
+    parser.add_argument('--use_class_weights', type=bool, default=False,
+                        help='Using class weights for loss calculation')
     parser.add_argument('--model', type=str, default='b4', help='model name')
 
     args = parser.parse_args()

@@ -26,6 +26,8 @@ from CustomImageFolder import CustomImageFolder
 from torchmetrics.classification import ConfusionMatrix
 import ssl
 
+_num_classes = 4
+
 
 class Transforms:
     def __init__(self, img_transf: A.Compose):
@@ -44,36 +46,44 @@ eff_net_sizes = {
     'b5': (489, 456),
     'b6': (561, 528),
     'b7': (633, 600),
+    'eff_v2_small': (384, 384),
+    'eff_v2_medium': (480, 480),
+    'eff_v2_large': (480, 480)
 }
 
 BASE_PATH = "/project/def-rmsouza/jocazar/"
 
-TRAIN_DATA_PATH = BASE_PATH + "original_dataset_rgba"
+TRAIN_DATA_PATH = BASE_PATH + "dataset_winter_2023_resized"
 
 
-def run_one_epoch(epoch_num, model, data_loader, len_train_data, hw_device, batch_size, learning_rate):
+def run_one_epoch(epoch_num, model, data_loader, len_train_data, hw_device,
+                  batch_size, train_optimizer, weights, use_class_weights):
 
     batch_loss = []
     n_batches = math.ceil((len_train_data/batch_size))
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=learning_rate, weight_decay=args.reg)
-    criterion = torch.nn.CrossEntropyLoss().to(hw_device)
+    opt_weights = torch.FloatTensor(weights).cuda()
+
+    if use_class_weights is True:
+        criterion = torch.nn.CrossEntropyLoss(weight=opt_weights).to(hw_device)
+    else:
+        criterion = torch.nn.CrossEntropyLoss().to(hw_device)
 
     print("Using device: {}".format(hw_device))
     for batch_idx, (images, labels) in enumerate(data_loader):
 
         images, labels = images.to(hw_device), labels.to(hw_device)
 
+        train_optimizer.zero_grad()
+
         model_outputs = model(images)
         loss = criterion(model_outputs, labels)
 
-        optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        train_optimizer.step()
 
         print("Batches {}/{} on epoch {}".format(batch_idx,
-                                                 n_batches, epoch_num), end='\r')
+                                                 n_batches, epoch_num))
 
         cpu_loss = loss.cpu()
         cpu_loss = cpu_loss.detach()
@@ -104,7 +114,7 @@ def calculate_train_accuracy(model, data_loader, len_train_data, hw_device, batc
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
 
             print("Batches {}/{} ".format(batch_idx,
-                                          n_batches), end='\r')
+                                          n_batches))
 
     print("\n")
     train_acc = 100 * (correct/len_train_data)
@@ -118,7 +128,7 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
 
     all_preds = []
     all_labels = []
-    confmat = ConfusionMatrix(task="multiclass", num_classes=4)
+    confmat = ConfusionMatrix(task="multiclass", num_classes=_num_classes)
     with torch.no_grad():
 
         for batch_idx, (images, labels) in enumerate(data_loader):
@@ -138,7 +148,7 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
 
             print("Batches {}/{} ".format(batch_idx,
-                                          n_batches), end='\r')
+                                          n_batches))
 
     all_preds = [item for sublist in all_preds for item in sublist]
     all_labels = [item for sublist in all_labels for item in sublist]
@@ -148,10 +158,26 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
     return val_acc
 
 
-def save_model_weights(model, model_name, epoch_num, val_acc, hw_device):
+def save_model_weights(model, model_name, epoch_num, val_acc, hw_device, fine_tuning, model_weights):
 
-    weights_path = BASE_PATH + "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{:.3f}_.model".format(
-        model_name, epoch_num+1, args.lr, args.reg, val_acc)
+    if fine_tuning:
+        base_name = "model_weights/BEST_model_{}_FT_EPOCH_{}_LR_{}_Reg_{}_FractionLR_{}_VAL_ACC_{:.3f}_".format(
+            model_name, epoch_num+1, args.lr, args.reg, args.fraction_lr, val_acc)
+
+        if model_weights:
+            base_name = base_name + "model_weights_{}".format(model_weights)
+
+    else:
+
+        base_name = "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{:.3f}_".format(
+            model_name, epoch_num+1, args.lr, args.reg, val_acc)
+
+        if model_weights:
+            base_name = base_name + "model_weights_{}".format(model_weights)
+
+    base_name = base_name + ".model"
+
+    weights_path = BASE_PATH + base_name
 
     model.to("cpu")
 
@@ -220,44 +246,54 @@ if __name__ == '__main__':
 
     print("Model: {}".format(args.model))
 
-    global_model = EffNetB4(4, args.tl)
+    global_model = EffNetB4(_num_classes, args.tl)
     input_size = eff_net_sizes["b4"]
     _batch_size = 32
     if args.model == "b4":
-        global_model = EffNetB4(4, args.tl)
+        global_model = EffNetB4(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
+    elif args.model == "eff_v2_small":
+        global_model = EffNetV2_S(_num_classes, args.tl)
+        input_size = eff_net_sizes[args.model]
+        _batch_size = 48
+    elif args.model == "eff_v2_medium":
+        global_model = EffNetV2_M(_num_classes, args.tl)
+        input_size = eff_net_sizes[args.model]
+    elif args.model == "eff_v2_large":
+        global_model = EffNetV2_L(_num_classes, args.tl)
+        input_size = eff_net_sizes[args.model]
+        _batch_size = 8
     elif args.model == "b5":
-        global_model = EffNetB5(4, args.tl)
+        global_model = EffNetB5(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
-        _batch_size = 16
     elif args.model == "b7":
         _batch_size = 8
-        global_model = EffNetB7(4, args.tl)
+        global_model = EffNetB7(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
     elif args.model == "b0":
-        global_model = EffNetB0(4, args.tl)
+        global_model = EffNetB0(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
         _batch_size = 40
     elif args.model == "res18":
-        global_model = ResNet18(4, args.tl)
+        global_model = ResNet18(_num_classes, args.tl)
         input_size = (300, 300)
     elif args.model == "res50":
-        global_model = ResNet50(4, args.tl)
+        global_model = ResNet50(_num_classes, args.tl)
         input_size = (400, 400)
     elif args.model == "res152":
-        global_model = ResNet152(4, args.tl)
+        global_model = ResNet152(_num_classes, args.tl)
         input_size = (500, 500)
     elif args.model == "next_tiny":
-        global_model = ConvNextTiny(4, args.tl)
+        global_model = ConvNextTiny(_num_classes, args.tl)
         input_size = (224, 224)
     elif args.model == "mb":
-        global_model = MBNetLarge(4, args.tl)
+        global_model = MBNetLarge(_num_classes, args.tl)
         input_size = (320, 320)
     elif args.model == "vision":
-        global_model = VisionLarge32(4, args.tl)
+        global_model = VisionLarge32(_num_classes, args.tl)
         input_size = (224, 224)
     elif args.model == "visionb":
-        global_model = VisionB32(4, args.tl)
+        global_model = VisionB32(_num_classes, args.tl)
         input_size = (224, 224)
     else:
         print("Invalid Model: {}".format(args.model))
@@ -266,6 +302,11 @@ if __name__ == '__main__':
     print("Batch Size: {}".format(_batch_size))
     print("Learning Rate: {}".format(args.lr))
     print("Training for {} epochs".format(args.epochs))
+
+    if args.tl is True:
+        print("Training for {} fine tuning epochs".format(args.ft_epochs))
+        print("Fraction of the LR for fine tuning: {}".format(args.fraction_lr))
+
     print("Regularization Rate: {}".format(args.reg))
 
     print(global_model)
@@ -290,17 +331,17 @@ if __name__ == '__main__':
     all_data_img_folder = CustomImageFolder(root=TRAIN_DATA_PATH)
 
     print("Total num of images: {}".format(len(all_data_img_folder)))
-    for i in range(4):
+    for i in range(_num_classes):
         len_samples = len(all_data_img_folder.per_class[i])
         print("Num of samples for class {}: {}. Percentage of dataset: {:.2f}".format(
             i, len_samples, (len_samples/len(all_data_img_folder))*100))
 
-    VALID_SPLIT = 0.8
+    VALID_SPLIT = 0.90
 
     train_data_per_class = []
     val_data_per_class = []
 
-    # Splitting the dataset while maintaning class proportions
+    # Splitting the dataset while maintaining class proportions
     for all_data_current_class in all_data_img_folder.per_class:
 
         class_dataset_size = len(all_data_current_class)
@@ -316,17 +357,22 @@ if __name__ == '__main__':
     # Flatenning the list of lists (one list per class) into a single list
     train_data = list(itertools.chain.from_iterable(train_data_per_class))
     val_data = list(itertools.chain.from_iterable(val_data_per_class))
+    class_weights = []
 
     # print("Common images: {}".format(len(list(set(train_data).intersection(val_data)))))
 
     print("Num of training images: {}".format(len(train_data)))
-    for i in range(4):
+    for i in range(_num_classes):
         len_samples = len(train_data_per_class[i])
         print("Num of training samples for class {}: {}. Percentage of dataset: {:.2f}".format(
             i, len_samples, (len_samples/len(train_data))*100))
+        this_weight = len(train_data)/(_num_classes * len_samples)
+        class_weights.append(this_weight)
+
+    print("Class weights: {}".format(class_weights))
 
     print("Num of validaton images: {}".format(len(val_data)))
-    for i in range(4):
+    for i in range(_num_classes):
         len_samples = len(val_data_per_class[i])
         print("Num of validation samples for class {}: {}. Percentage of dataset: {:.2f}".format(
             i, len_samples, (len_samples/len(val_data))*100))
@@ -335,13 +381,13 @@ if __name__ == '__main__':
     # mean_train_dataset, std_train_dataset = calculate_mean_std_train_dataset(
     #     train_data, STATS_PIPELINE)
 
-    mean_train_dataset = [0.6963, 0.6683, 0.6307]
-    std_train_dataset = [0.0353, 0.0355, 0.0353]
+    mean_train_dataset = [0.5558, 0.5318, 0.5029]
+    std_train_dataset = [0.0315, 0.0318, 0.0315]
 
     print("Mean Train Dataset: {}, STD Train Dataset: {}".format(
         mean_train_dataset, std_train_dataset))
 
-    prob_augmentations = 0.5
+    prob_augmentations = 0.6
 
     normalize_transform = A.Normalize(mean=mean_train_dataset,
                                       std=std_train_dataset, always_apply=True)
@@ -361,6 +407,12 @@ if __name__ == '__main__':
         A.Perspective(p=prob_augmentations,
                       pad_mode=cv2.BORDER_CONSTANT,
                       pad_val=0),
+        # Using this transform just to zoom in an out
+        A.ShiftScaleRotate(shift_limit=0, rotate_limit=0,
+                           interpolation=cv2.INTER_CUBIC,
+                           border_mode=cv2.BORDER_CONSTANT,
+                           value=0, p=prob_augmentations,
+                           scale_limit=0.3),
         normalize_transform,
         a_pytorch.transforms.ToTensorV2()
     ])
@@ -395,21 +447,28 @@ if __name__ == '__main__':
     train_accuracy_history = []
     val_accuracy_history = []
 
+    optimizer = torch.optim.AdamW(
+        global_model.parameters(), lr=args.lr, weight_decay=args.reg)
+
     print("Starting training...")
     global_model.to(device)
     max_val_accuracy = 0.0
+    best_epoch = 0
 
     for epoch in range(args.epochs):
 
         global_model.train()
         st = time.time()
+
         num_batches, train_loss_per_batch = run_one_epoch(epoch,
                                                           global_model,
                                                           data_loader_train,
                                                           len(train_data),
                                                           device,
                                                           _batch_size,
-                                                          args.lr)
+                                                          optimizer,
+                                                          class_weights,
+                                                          args.use_class_weights)
 
         elapsed_time = time.time() - st
         print('Epoch time: {:.1f}'.format(elapsed_time))
@@ -456,12 +515,14 @@ if __name__ == '__main__':
         if val_accuracy > max_val_accuracy:
             print("Best model obtained based on Val Acc. Saving it!")
             save_model_weights(global_model, args.model,
-                               epoch, val_accuracy, device)
+                               epoch, val_accuracy, device, False)
             max_val_accuracy = val_accuracy
+            best_epoch = epoch
         else:
-            print("Not saving model, best Val Acc so far: {:.3f}".format(
-                max_val_accuracy))
+            print("Not saving model, best Val Acc so far on epoch {}: {:.3f}".format(best_epoch,
+                                                                                     max_val_accuracy))
 
+    print("Starting Fine tuning!!")
     # Fine tuning loop
     if args.tl is True:
 
@@ -469,8 +530,13 @@ if __name__ == '__main__':
         for param in global_model.parameters():
             param.requires_grad = True
 
+        # update learning rate of optimizer
+        for group in optimizer.param_groups:
+            group['lr'] = args.lr/args.fraction_lr
+
         for epoch in range(args.ft_epochs):
 
+            global_model.train()
             st = time.time()
             # train using a small learning rate
             ft_num_batches, ft_train_loss_per_batch = run_one_epoch(epoch,
@@ -479,7 +545,9 @@ if __name__ == '__main__':
                                                                     len(train_data),
                                                                     device,
                                                                     _batch_size,
-                                                                    args.lr/args.fraction_lr)
+                                                                    optimizer,
+                                                                    class_weights,
+                                                                    args.use_class_weights)
             elapsed_time = time.time() - st
             print('Fine Tuning: epoch time: {:.1f}'.format(elapsed_time))
 
@@ -494,6 +562,7 @@ if __name__ == '__main__':
             print("Fine Tuning: min train loss on epoch {}: {:.3f}".format(
                 epoch, np.min(ft_train_loss_per_batch)))
 
+            train_loss_history.append(ft_train_loss_avg)
             global_model.eval()
 
             print(
@@ -518,31 +587,39 @@ if __name__ == '__main__':
                                                   len(val_data),
                                                   device,
                                                   _batch_size)
+            print("Fine Tuning: Val set accuracy on epoch {}: {:.3f}".format(
+                epoch, val_accuracy))
+
+            val_accuracy_history.append(val_accuracy)
 
             if val_accuracy > max_val_accuracy:
                 print("Fine Tuning: best model obtained based on Val Acc. Saving it!")
                 save_model_weights(global_model, args.model,
-                                   epoch, val_accuracy, device)
+                                   epoch, val_accuracy, device, True)
+                best_epoch = epoch
                 max_val_accuracy = val_accuracy
             else:
-                print("Fine Tuning: not saving model, best Val Acc so far: {:.3f}".format(
-                    max_val_accuracy))
+                print("Fine Tuning: not saving model, best Val Acc so far on epoch {}: {:.3f}".format(best_epoch,
+                                                                                                      max_val_accuracy))
 
     # Finished training, save data
-    with open(BASE_PATH + 'save/train_loss_model_{}_LR_{}_REG_{}.csv'.format(args.model, args.lr, args.reg), 'w') as f:
+    with open(BASE_PATH + 'save/train_loss_model_{}_LR_{}_REG_{}_class_weights_{}.csv'.format(
+            args.model, args.lr, args.reg, args.use_class_weights), 'w') as f:
 
         write = csv.writer(f)
-        write.writerow(map(lambda x: [x], train_loss_history))
+        write.writerow(map(lambda x: x, train_loss_history))
 
-    with open(BASE_PATH + 'save/train_acc_model_{}_LR_{}_REG_{}.csv'.format(args.model, args.lr, args.reg), 'w') as f:
-
-        write = csv.writer(f)
-        write.writerow(map(lambda x: [x], train_accuracy_history))
-
-    with open(BASE_PATH + 'save/val_acc_{}.csv'.format(args.model), 'w') as f:
+    with open(BASE_PATH + 'save/train_acc_model_{}_LR_{}_REG_{}_class_weights_{}.csv'.format(
+            args.model, args.lr, args.reg, args.use_class_weights), 'w') as f:
 
         write = csv.writer(f)
-        write.writerow(map(lambda x: [x], val_accuracy_history))
+        write.writerow(map(lambda x: x, train_accuracy_history))
+
+    with open(BASE_PATH + 'save/val_acc_model_{}_LR_{}_REG_{}_class_weights_{}.csv.csv'.format(
+            args.model, args.lr, args.reg, args.use_class_weights), 'w') as f:
+
+        write = csv.writer(f)
+        write.writerow(map(lambda x: x, val_accuracy_history))
 
     # Plot train loss
     train_loss_history = torch.FloatTensor(train_loss_history).cpu()
@@ -551,7 +628,8 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Train loss')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_train_loss.png'.format(args.model, args.epochs, args.lr, args.reg))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_train_loss.png'.format(
+            args.model, args.epochs, args.lr, args.reg, args.use_class_weights))
 
     # Plot train accuracy
     train_accuracy_history = torch.FloatTensor(train_accuracy_history).cpu()
@@ -560,7 +638,8 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Train accuracy')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_train_accuracy.png'.format(args.model, args.epochs, args.lr, args.reg))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_train_accuracy.png'.format(
+            args.model, args.epochs, args.lr, args.reg, args.use_class_weights))
 
     # Plot val accuracy
     plt.figure()
@@ -568,6 +647,7 @@ if __name__ == '__main__':
     plt.xlabel('Epochs')
     plt.ylabel('Val accuracy per Epoch')
     plt.savefig(
-        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_val_accuracy.png'.format(args.model, args.epochs, args.lr, args.reg))
+        BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_val_accuracy.png'.format(
+            args.model, args.epochs, args.lr, args.reg, args.use_class_weights))
 
     # run.finish()
