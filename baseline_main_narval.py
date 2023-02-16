@@ -83,7 +83,7 @@ def run_one_epoch(epoch_num, model, data_loader, len_train_data, hw_device,
         train_optimizer.step()
 
         print("Batches {}/{} on epoch {}".format(batch_idx,
-                                                 n_batches, epoch_num))
+                                                 n_batches, epoch_num), end='\r')
 
         cpu_loss = loss.cpu()
         cpu_loss = cpu_loss.detach()
@@ -114,7 +114,7 @@ def calculate_train_accuracy(model, data_loader, len_train_data, hw_device, batc
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
 
             print("Batches {}/{} ".format(batch_idx,
-                                          n_batches))
+                                          n_batches), end='\r')
 
     print("\n")
     train_acc = 100 * (correct/len_train_data)
@@ -148,7 +148,7 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
 
             print("Batches {}/{} ".format(batch_idx,
-                                          n_batches))
+                                          n_batches), end='\r')
 
     all_preds = [item for sublist in all_preds for item in sublist]
     all_labels = [item for sublist in all_labels for item in sublist]
@@ -158,22 +158,22 @@ def calculate_val_accuracy(model, data_loader, len_val_data, hw_device, batch_si
     return val_acc
 
 
-def save_model_weights(model, model_name, epoch_num, val_acc, hw_device, fine_tuning, model_weights):
+def save_model_weights(model, model_name, epoch_num, val_acc, hw_device, fine_tuning, class_weights):
 
     if fine_tuning:
         base_name = "model_weights/BEST_model_{}_FT_EPOCH_{}_LR_{}_Reg_{}_FractionLR_{}_VAL_ACC_{:.3f}_".format(
             model_name, epoch_num+1, args.lr, args.reg, args.fraction_lr, val_acc)
 
-        if model_weights:
-            base_name = base_name + "model_weights_{}".format(model_weights)
+        if class_weights:
+            base_name = base_name + "class_weights_{}".format(class_weights)
 
     else:
 
         base_name = "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{:.3f}_".format(
             model_name, epoch_num+1, args.lr, args.reg, val_acc)
 
-        if model_weights:
-            base_name = base_name + "model_weights_{}".format(model_weights)
+        if class_weights:
+            base_name = base_name + "class_weights_{}".format(class_weights)
 
     base_name = base_name + ".model"
 
@@ -302,7 +302,7 @@ if __name__ == '__main__':
     print("Batch Size: {}".format(_batch_size))
     print("Learning Rate: {}".format(args.lr))
     print("Training for {} epochs".format(args.epochs))
-
+    print("Use class weights: {}".format(args.balance_weights))
     if args.tl is True:
         print("Training for {} fine tuning epochs".format(args.ft_epochs))
         print("Fraction of the LR for fine tuning: {}".format(args.fraction_lr))
@@ -468,7 +468,7 @@ if __name__ == '__main__':
                                                           _batch_size,
                                                           optimizer,
                                                           class_weights,
-                                                          args.use_class_weights)
+                                                          args.balance_weights)
 
         elapsed_time = time.time() - st
         print('Epoch time: {:.1f}'.format(elapsed_time))
@@ -515,7 +515,7 @@ if __name__ == '__main__':
         if val_accuracy > max_val_accuracy:
             print("Best model obtained based on Val Acc. Saving it!")
             save_model_weights(global_model, args.model,
-                               epoch, val_accuracy, device, False, args.use_class_weights)
+                               epoch, val_accuracy, device, False, args.balance_weights)
             max_val_accuracy = val_accuracy
             best_epoch = epoch
         else:
@@ -547,7 +547,7 @@ if __name__ == '__main__':
                                                                     _batch_size,
                                                                     optimizer,
                                                                     class_weights,
-                                                                    args.use_class_weights)
+                                                                    args.balance_weights)
             elapsed_time = time.time() - st
             print('Fine Tuning: epoch time: {:.1f}'.format(elapsed_time))
 
@@ -595,7 +595,7 @@ if __name__ == '__main__':
             if val_accuracy > max_val_accuracy:
                 print("Fine Tuning: best model obtained based on Val Acc. Saving it!")
                 save_model_weights(global_model, args.model,
-                                   epoch, val_accuracy, device, True, args.use_class_weights)
+                                   epoch, val_accuracy, device, True, args.balance_weights)
                 best_epoch = epoch
                 max_val_accuracy = val_accuracy
             else:
@@ -604,19 +604,19 @@ if __name__ == '__main__':
 
     # Finished training, save data
     with open(BASE_PATH + 'save/train_loss_model_{}_LR_{}_REG_{}_class_weights_{}.csv'.format(
-            args.model, args.lr, args.reg, args.use_class_weights), 'w') as f:
+            args.model, args.lr, args.reg, args.balance_weights), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: x, train_loss_history))
 
     with open(BASE_PATH + 'save/train_acc_model_{}_LR_{}_REG_{}_class_weights_{}.csv'.format(
-            args.model, args.lr, args.reg, args.use_class_weights), 'w') as f:
+            args.model, args.lr, args.reg, args.balance_weights), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: x, train_accuracy_history))
 
     with open(BASE_PATH + 'save/val_acc_model_{}_LR_{}_REG_{}_class_weights_{}.csv.csv'.format(
-            args.model, args.lr, args.reg, args.use_class_weights), 'w') as f:
+            args.model, args.lr, args.reg, args.balance_weights), 'w') as f:
 
         write = csv.writer(f)
         write.writerow(map(lambda x: x, val_accuracy_history))
@@ -629,7 +629,7 @@ if __name__ == '__main__':
     plt.ylabel('Train loss')
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_train_loss.png'.format(
-            args.model, args.epochs, args.lr, args.reg, args.use_class_weights))
+            args.model, args.epochs, args.lr, args.reg, args.balance_weights))
 
     # Plot train accuracy
     train_accuracy_history = torch.FloatTensor(train_accuracy_history).cpu()
@@ -639,7 +639,7 @@ if __name__ == '__main__':
     plt.ylabel('Train accuracy')
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_train_accuracy.png'.format(
-            args.model, args.epochs, args.lr, args.reg, args.use_class_weights))
+            args.model, args.epochs, args.lr, args.reg, args.balance_weights))
 
     # Plot val accuracy
     plt.figure()
@@ -648,6 +648,6 @@ if __name__ == '__main__':
     plt.ylabel('Val accuracy per Epoch')
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_val_accuracy.png'.format(
-            args.model, args.epochs, args.lr, args.reg, args.use_class_weights))
+            args.model, args.epochs, args.lr, args.reg, args.balance_weights))
 
     # run.finish()
