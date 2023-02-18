@@ -24,5 +24,8 @@ def args_parser():
                         help='value to divide the regular LR for to use in fine tuning')
     parser.add_argument('--model', type=str, default='b4', help='model name')
 
+    parser.add_argument('--model_path', type=str, default="",
+                        help='Model to test')
+
     args = parser.parse_args()
     return args

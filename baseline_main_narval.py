@@ -164,18 +164,13 @@ def save_model_weights(model, model_name, epoch_num, val_acc, hw_device, fine_tu
         base_name = "model_weights/BEST_model_{}_FT_EPOCH_{}_LR_{}_Reg_{}_FractionLR_{}_VAL_ACC_{:.3f}_".format(
             model_name, epoch_num+1, args.lr, args.reg, args.fraction_lr, val_acc)
 
-        if class_weights:
-            base_name = base_name + "class_weights_{}".format(class_weights)
-
     else:
 
         base_name = "model_weights/BEST_model_{}_epoch_{}_LR_{}_Reg_{}_VAL_ACC_{:.3f}_".format(
             model_name, epoch_num+1, args.lr, args.reg, val_acc)
 
-        if class_weights:
-            base_name = base_name + "class_weights_{}".format(class_weights)
-
-    base_name = base_name + ".model"
+    base_name = base_name + "class_weights_{}".format(class_weights)
+    base_name = base_name + ".pth"
 
     weights_path = BASE_PATH + base_name
 
@@ -267,9 +262,9 @@ if __name__ == '__main__':
         global_model = EffNetB5(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
     elif args.model == "b7":
-        _batch_size = 8
         global_model = EffNetB7(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
+        _batch_size = 6
     elif args.model == "b0":
         global_model = EffNetB0(_num_classes, args.tl)
         input_size = eff_net_sizes[args.model]
@@ -615,7 +610,7 @@ if __name__ == '__main__':
         write = csv.writer(f)
         write.writerow(map(lambda x: x, train_accuracy_history))
 
-    with open(BASE_PATH + 'save/val_acc_model_{}_LR_{}_REG_{}_class_weights_{}.csv.csv'.format(
+    with open(BASE_PATH + 'save/val_acc_model_{}_LR_{}_REG_{}_class_weights_{}.csv'.format(
             args.model, args.lr, args.reg, args.balance_weights), 'w') as f:
 
         write = csv.writer(f)
@@ -627,6 +622,7 @@ if __name__ == '__main__':
     plt.plot(range(len(train_loss_history)), train_loss_history)
     plt.xlabel('Epochs')
     plt.ylabel('Train loss')
+    plt.title('Model: {}'.format(args.model))
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_train_loss.png'.format(
             args.model, args.epochs, args.lr, args.reg, args.balance_weights))
@@ -637,6 +633,7 @@ if __name__ == '__main__':
     plt.plot(range(len(train_accuracy_history)), train_accuracy_history)
     plt.xlabel('Epochs')
     plt.ylabel('Train accuracy')
+    plt.title('Model: {}'.format(args.model))
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_train_accuracy.png'.format(
             args.model, args.epochs, args.lr, args.reg, args.balance_weights))
@@ -646,6 +643,7 @@ if __name__ == '__main__':
     plt.plot(range(len(val_accuracy_history)), val_accuracy_history)
     plt.xlabel('Epochs')
     plt.ylabel('Val accuracy per Epoch')
+    plt.title('Model: {}'.format(args.model))
     plt.savefig(
         BASE_PATH + 'save/[M]_{}_[E]_{}_[LR]_{}_[REG]_{}_class_weights_{}_val_accuracy.png'.format(
             args.model, args.epochs, args.lr, args.reg, args.balance_weights))
